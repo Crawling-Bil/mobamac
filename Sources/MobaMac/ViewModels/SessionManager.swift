@@ -1,0 +1,506 @@
+import Foundation
+import SwiftUI
+import SwiftTerm
+import AppKit
+
+enum OpenSessionKind {
+    case ssh(SSHConnectionSession)
+    case telnet(TelnetConnectionSession)
+    case serial(SerialConnectionSession)
+    case local // handled directly by LocalProcessTerminalView, no ConnectionSession needed
+}
+
+/// A connection failure or security warning surfaced in place of the
+/// terminal for that tab — e.g. a rejected host key, a bad private key, a
+/// serial port that couldn't be opened, or any other error a
+/// ConnectionSession's `start()` threw. Previously these were swallowed
+/// (`try? await ssh.start()`), which is exactly how a bad host or a
+/// host-key mismatch turned into a tab that just sat there blank forever
+/// with no explanation.
+struct SSHConnectionIssue {
+    let message: String
+    let isHostKeyMismatch: Bool
+    /// True when this tab connected successfully at some point and then
+    /// dropped (network blip, device reboot, idle timeout despite
+    /// keepalive) rather than never having connected at all. Drives whether
+    /// the "Reconnect" button (UI spec §9.2) is offered: a session that was
+    /// fine and dropped almost always just needs a fresh connection, while a
+    /// pre-connection failure (bad host, bad credentials, rejected key) will
+    /// usually just fail the same way again, so those still only offer
+    /// "Close Tab" (plus "Trust New Key & Reconnect" for a host-key
+    /// mismatch, which is its own distinct recovery path).
+    let isDisconnection: Bool
+}
+
+/// One open tab: pairs a profile with its live connection (if any) and its logger.
+final class OpenSession: ObservableObject, Identifiable {
+    let id = UUID()
+    let profile: SessionProfile
+    /// Mutable (not `let`) so reconnect (UI spec §9.2) can swap in a brand
+    /// new `ConnectionSession` for the same tab instead of opening a second
+    /// one — `SessionTabView`'s `switch session.kind` re-renders the right
+    /// host view automatically the moment this changes, and the terminal
+    /// visuals never need touching directly.
+    @Published var kind: OpenSessionKind
+    /// Mutable so each reconnect attempt gets its own fresh, timestamped log
+    /// file rather than appending a new connection's output to the previous
+    /// attempt's log — safe to swap because host views always read
+    /// `openSession.logger` dynamically per write, never a captured local.
+    var logger: SessionLogger
+    @Published var title: String
+    @Published var connectionIssue: SSHConnectionIssue?
+    /// 0 while idle; set while an auto-reconnect loop (UI spec §9.2) is
+    /// actively retrying, so the UI can show "Reconnecting… N/20".
+    @Published var reconnectAttempt: Int = 0
+    /// Per-session, default-off syntax-highlighting toggle (UI spec §6). Off
+    /// by default because highlighting requires buffering a full line before
+    /// anything reaches the screen — including the user's own typed-character
+    /// echo — which is a real latency cost most sessions shouldn't pay.
+    @Published var highlightingEnabled: Bool = false
+    /// Backs `highlightingEnabled` when it's on — buffers raw bytes into
+    /// complete lines before they're colorized and fed to the terminal view.
+    /// Lives here (not as a local in the host view) so it survives across
+    /// however many `onOutput` callbacks fire for this session's lifetime.
+    let lineBuffer = LineBuffer()
+    /// Set by whichever host view (SSHTerminalHostView / RawTerminalHostView /
+    /// LocalTerminalHostView) actually creates the SwiftTerm.TerminalView for
+    /// this tab, so snippets/macros can reach it — `TerminalView.send(txt:)`
+    /// is the same public entry point a real keystroke goes through, so
+    /// firing a snippet works uniformly across every session kind. Weak
+    /// because the view owns its lifecycle, not this object.
+    weak var terminalView: TerminalView?
+    /// Backs the toolbar's live theme picker (UI spec follow-up: pick a
+    /// theme for the active tab without going through Edit Session). Separate
+    /// from `profile.themeID`, which is immutable on this object and only
+    /// describes what a fresh tab starts from; changing this re-colors the
+    /// already-running TerminalView immediately (SessionTabView's `onChange`
+    /// does the actual `apply(theme:)` call) and ContentView persists it back
+    /// to the saved profile so the next tab opened from it starts the same way.
+    @Published var themeID: String
+
+    init(profile: SessionProfile, kind: OpenSessionKind, logger: SessionLogger) {
+        self.profile = profile
+        self.kind = kind
+        self.logger = logger
+        self.title = profile.name
+        self.themeID = profile.themeID ?? TerminalTheme.appDefault.id
+    }
+}
+
+/// Single source of truth for which tabs are open and which one is active.
+/// ProfileStore holds what CAN be opened; this holds what IS currently open.
+///
+/// Deliberately not wiring `onOutput` here — the terminal host views
+/// (SSHTerminalHostView / RawTerminalHostView / LocalTerminalHostView) own
+/// that, since feeding bytes into a SwiftTerm.TerminalView has to happen on
+/// the main thread right where the view lives.
+final class SessionManager: ObservableObject {
+    /// Per-profile connection state, shown as a status dot in the sidebar —
+    /// including for profiles that aren't in an open tab at all (those just
+    /// read as `.idle`, the default for anything not in this dictionary).
+    enum ConnectionState {
+        case idle       // saved, not connected — gray outline dot
+        case connecting // yellow dot
+        case connected  // green dot
+        case failed     // red dot
+    }
+
+    @Published var openSessions: [OpenSession] = []
+    @Published var activeSessionID: OpenSession.ID?
+    @Published private var connectionStates: [UUID: ConnectionState] = [:]
+
+    /// Set once from MobaMacApp/ContentView so `openSSH` (and friends) can
+    /// update `lastConnectedAt` on the underlying saved profile when a
+    /// connection succeeds. Weak since ProfileStore, not this, owns that
+    /// object's lifetime.
+    weak var profileStore: ProfileStore?
+
+    /// Set once from ContentView, same as `profileStore` — lets `openSSH`
+    /// and reconnect resolve a profile's `credentialSetID` (UI spec §9.4)
+    /// into an actual username/secret at connect time. Weak for the same
+    /// reason: CredentialSetStore, not this, owns that object's lifetime.
+    weak var credentialSetStore: CredentialSetStore?
+
+    /// The set of open SSH tabs that currently share keystrokes with each
+    /// other (MobaXterm calls the underlying feature "multi-exec"). Replaces
+    /// the old all-or-nothing `broadcastEnabled: Bool` — see the UI spec's
+    /// broadcast-scoping section. Empty means broadcast is effectively off;
+    /// a tab not in this set behaves normally even while other tabs are
+    /// broadcasting to each other.
+    @Published var broadcastTargetIDs: Set<OpenSession.ID> = []
+
+    /// Toggled by the ⌘, menu-bar shortcut wired in MobaMacApp (same
+    /// "menu key equivalents beat the first responder" trick already used
+    /// for macro shortcuts) — lives here rather than as local ContentView
+    /// state so a global keystroke can reach it without a screen tap first.
+    @Published var showingCommandPalette: Bool = false
+
+    /// One in-flight reconnect (manual retry or auto-reconnect loop) per
+    /// tab, keyed by `OpenSession.id`. Tracked here rather than on
+    /// `OpenSession` itself so closing a tab can cancel its loop with no
+    /// extra bookkeeping on the session object. A manual reconnect cancels
+    /// whatever's already running for that tab before starting its own, so
+    /// there's never more than one attempt racing another for the same tab.
+    private var reconnectTasks: [OpenSession.ID: Task<Void, Never>] = [:]
+
+    private static let maxAutoReconnectAttempts = 20
+    private static let autoReconnectDelaySeconds: UInt64 = 15
+
+    var activeSession: OpenSession? {
+        openSessions.first { $0.id == activeSessionID }
+    }
+
+    var openSSHSessionCount: Int {
+        openSessions.filter { if case .ssh = $0.kind { return true } else { return false } }.count
+    }
+
+    var openSSHSessions: [OpenSession] {
+        openSessions.filter { if case .ssh = $0.kind { return true } else { return false } }
+    }
+
+    func connectionState(for profileID: UUID) -> ConnectionState {
+        connectionStates[profileID] ?? .idle
+    }
+
+    /// Sends the same bytes to every open SSH session that's currently opted
+    /// into broadcast. Includes the session that originated the keystroke —
+    /// it already rendered locally in that session's own TerminalView, this
+    /// just replicates the same input to the others that are in scope.
+    func broadcast(_ data: Data, from senderID: OpenSession.ID) {
+        for session in openSessions {
+            guard case .ssh(let ssh) = session.kind else { continue }
+            guard broadcastTargetIDs.contains(session.id) else { continue }
+            Task { await ssh.send(data) }
+        }
+    }
+
+    func closeActive() {
+        guard let active = activeSession else { return }
+        close(active)
+    }
+
+    /// Fires a snippet/macro at the active tab, whatever kind it is — SSH,
+    /// Telnet, Serial or Local all end up feeding the same
+    /// `TerminalView.send(txt:)` entry point a real keystroke would use, so
+    /// there's no session-kind-specific plumbing needed here.
+    func sendToActive(_ text: String) {
+        guard let view = activeSession?.terminalView else { return }
+        view.send(txt: text)
+    }
+
+    /// UI spec: font-size defaults / ⌘+⌘-⌘0 zoom (MobaMacApp's "View" menu).
+    /// Pushes `size` — the new persisted "normal" point size — live to
+    /// every open tab's terminal at once, respecting whichever tab happens
+    /// to already be in native full screen: every tab shares one window, so
+    /// full screen is an all-or-nothing state for this app, not a per-tab
+    /// one, and a tab currently in full screen should keep looking bumped
+    /// up by `TerminalFontSettings.fullScreenBump` rather than snapping back
+    /// to the windowed size mid-zoom.
+    func applyTerminalFontSize(_ size: CGFloat) {
+        for session in openSessions {
+            guard let view = session.terminalView else { continue }
+            let isFullScreen = view.window?.styleMask.contains(.fullScreen) ?? false
+            view.applyMobaMacTerminalFont(size: isFullScreen ? size + TerminalFontSettings.fullScreenBump : size)
+        }
+    }
+
+    /// If `profile.credentialSetID` points at a saved credential set (UI
+    /// spec §9.4), returns a copy of `profile` with its username/auth
+    /// method/key path overridden from that set, plus that set's own
+    /// Keychain secret — so the rest of the connect path (and reconnect,
+    /// which calls this too) never needs to know credential sets exist.
+    /// Falls back to `profile`/`fallbackSecret` untouched when there's no
+    /// credential set referenced, or it's since been deleted.
+    private func resolvedSSHCredentials(for profile: SessionProfile, fallbackSecret: String?) -> (profile: SessionProfile, secret: String?) {
+        guard let credentialSetID = profile.credentialSetID,
+              let set = credentialSetStore?.credentialSet(id: credentialSetID) else {
+            return (profile, fallbackSecret)
+        }
+        var resolved = profile
+        resolved.username = set.username
+        resolved.authMethod = set.authMethod
+        resolved.privateKeyPath = set.privateKeyPath
+        return (resolved, credentialSetStore?.secret(for: set))
+    }
+
+    func openSSH(profile: SessionProfile, secret: String?) {
+        let logger = SessionLogger(profileName: profile.name)
+        let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: secret)
+        let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
+        // The tab itself still carries the ORIGINAL profile — the one with
+        // `credentialSetID` set and its own (possibly blank) username/auth
+        // fields — so editing this session later, or looking at it in the
+        // sidebar, reflects what's actually saved rather than a resolved
+        // snapshot from whichever credential set happened to apply at
+        // connect time.
+        let opened = OpenSession(profile: profile, kind: .ssh(ssh), logger: logger)
+
+        ssh.onClose = { [weak self, weak opened] error in
+            guard let self, let opened else { return }
+            self.handleUnexpectedClose(opened, error: error)
+        }
+
+        openSessions.append(opened)
+        activeSessionID = opened.id
+        connectionStates[profile.id] = .connecting
+
+        Task {
+            do {
+                try await ssh.start()
+                self.markConnected(profile)
+            } catch {
+                opened.connectionIssue = Self.issue(from: error)
+                self.connectionStates[profile.id] = .failed
+            }
+        }
+    }
+
+    func openTelnet(profile: SessionProfile) {
+        let logger = SessionLogger(profileName: profile.name)
+        let telnet = TelnetConnectionSession(host: profile.host, port: profile.port)
+        let opened = OpenSession(profile: profile, kind: .telnet(telnet), logger: logger)
+
+        telnet.onClose = { [weak self, weak opened] error in
+            guard let self, let opened else { return }
+            self.handleUnexpectedClose(opened, error: error)
+        }
+
+        openSessions.append(opened)
+        activeSessionID = opened.id
+        connectionStates[profile.id] = .connecting
+
+        Task {
+            do {
+                try await telnet.start()
+                self.markConnected(profile)
+            } catch {
+                opened.connectionIssue = Self.issue(from: error)
+                self.connectionStates[profile.id] = .failed
+            }
+        }
+    }
+
+    func openSerial(profile: SessionProfile) {
+        let logger = SessionLogger(profileName: profile.name)
+        let serial = SerialConnectionSession(
+            devicePath: profile.serialPortPath ?? "",
+            baudRate: profile.baudRate ?? 9600
+        )
+        let opened = OpenSession(profile: profile, kind: .serial(serial), logger: logger)
+
+        serial.onClose = { [weak self, weak opened] error in
+            guard let self, let opened else { return }
+            self.handleUnexpectedClose(opened, error: error)
+        }
+
+        openSessions.append(opened)
+        activeSessionID = opened.id
+        connectionStates[profile.id] = .connecting
+
+        Task {
+            do {
+                try await serial.start()
+                self.markConnected(profile)
+            } catch {
+                opened.connectionIssue = Self.issue(from: error)
+                self.connectionStates[profile.id] = .failed
+            }
+        }
+    }
+
+    func openLocal(profile: SessionProfile) {
+        let logger = SessionLogger(profileName: profile.name)
+        let opened = OpenSession(profile: profile, kind: .local, logger: logger)
+        openSessions.append(opened)
+        activeSessionID = opened.id
+        markConnected(profile)
+    }
+
+    /// The recovery action offered when a session's `connectionIssue` is a
+    /// host-key mismatch: explicitly re-trust the new key (same as deleting
+    /// the stale `known_hosts` line yourself) and reconnect.
+    func retryTrustingHostKey(_ session: OpenSession) {
+        guard case .ssh(let ssh) = session.kind else { return }
+        session.connectionIssue = nil
+        connectionStates[session.profile.id] = .connecting
+        Task {
+            do {
+                try await ssh.retryTrustingNewHostKey()
+                self.markConnected(session.profile)
+            } catch {
+                session.connectionIssue = Self.issue(from: error)
+                self.connectionStates[session.profile.id] = .failed
+            }
+        }
+    }
+
+    /// Manual reconnect (UI spec §9.2's ⌘R): cancels any auto-reconnect loop
+    /// already running for this tab so the two never race each other, then
+    /// makes one immediate attempt. If that attempt also fails and the
+    /// profile has auto-reconnect on, hands off into the regular auto-reconnect
+    /// loop rather than just giving up after the one manual try.
+    func reconnect(_ session: OpenSession) {
+        reconnectTasks[session.id]?.cancel()
+        reconnectTasks[session.id] = Task { [weak self] in
+            guard let self else { return }
+            await self.attemptReconnect(session)
+            if session.connectionIssue != nil, session.profile.autoReconnect == true {
+                self.startAutoReconnect(session)
+            }
+        }
+    }
+
+    /// A tab's `ConnectionSession` reported it closed — either cleanly or
+    /// with an error. This fires both for genuine surprise disconnects
+    /// (network drop, device reboot) and, harmlessly, as an echo of a
+    /// deliberate `close(_:)` call: `close(_:)` removes the tab from
+    /// `openSessions` synchronously before its own `Task { await x.close() }`
+    /// finishes, so by the time that close is what triggers this callback,
+    /// the guard below already sees the tab gone and does nothing.
+    private func handleUnexpectedClose(_ session: OpenSession, error: Error?) {
+        guard openSessions.contains(where: { $0.id == session.id }) else { return }
+        session.connectionIssue = Self.issue(from: error, isDisconnection: true)
+        connectionStates[session.profile.id] = .failed
+        if session.profile.autoReconnect == true {
+            startAutoReconnect(session)
+        }
+    }
+
+    /// Up to 20 attempts, 15 seconds apart (UI spec §9.2's stated caps),
+    /// bailing out the moment the tab is closed, a manual reconnect takes
+    /// over, or an attempt actually succeeds. Awaits `attemptReconnect`
+    /// directly rather than firing it and moving on, so there's never more
+    /// than one connection attempt in flight for this tab at a time.
+    private func startAutoReconnect(_ session: OpenSession) {
+        reconnectTasks[session.id]?.cancel()
+        reconnectTasks[session.id] = Task { [weak self] in
+            guard let self else { return }
+            for attempt in 1...Self.maxAutoReconnectAttempts {
+                if Task.isCancelled { return }
+                guard self.openSessions.contains(where: { $0.id == session.id }) else { return }
+                guard session.connectionIssue != nil else { return } // already reconnected
+                session.reconnectAttempt = attempt
+                try? await Task.sleep(nanoseconds: Self.autoReconnectDelaySeconds * 1_000_000_000)
+                if Task.isCancelled { return }
+                guard self.openSessions.contains(where: { $0.id == session.id }) else { return }
+                guard session.connectionIssue != nil else { return }
+                await self.attemptReconnect(session)
+                if session.connectionIssue == nil { return } // success
+            }
+            session.reconnectAttempt = 0
+        }
+    }
+
+    /// Builds a brand-new `ConnectionSession` matching `session.kind`'s
+    /// current case, swaps it into the same tab (so the tab identity, its
+    /// scrollback-adjacent chrome, and its place in the tab bar are all
+    /// undisturbed), and gives it a fresh timestamped log file rather than
+    /// appending to the previous attempt's log.
+    private func attemptReconnect(_ session: OpenSession) async {
+        session.connectionIssue = nil
+        connectionStates[session.profile.id] = .connecting
+
+        let profile = session.profile
+        let newLogger = SessionLogger(profileName: profile.name)
+
+        do {
+            switch session.kind {
+            case .ssh:
+                let fallbackSecret = profileStore?.secret(for: profile)
+                let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
+                let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
+                ssh.onClose = { [weak self, weak session] error in
+                    guard let self, let session else { return }
+                    self.handleUnexpectedClose(session, error: error)
+                }
+                session.kind = .ssh(ssh)
+                session.logger = newLogger
+                try await ssh.start()
+            case .telnet:
+                let telnet = TelnetConnectionSession(host: profile.host, port: profile.port)
+                telnet.onClose = { [weak self, weak session] error in
+                    guard let self, let session else { return }
+                    self.handleUnexpectedClose(session, error: error)
+                }
+                session.kind = .telnet(telnet)
+                session.logger = newLogger
+                try await telnet.start()
+            case .serial:
+                let serial = SerialConnectionSession(
+                    devicePath: profile.serialPortPath ?? "",
+                    baudRate: profile.baudRate ?? 9600
+                )
+                serial.onClose = { [weak self, weak session] error in
+                    guard let self, let session else { return }
+                    self.handleUnexpectedClose(session, error: error)
+                }
+                session.kind = .serial(serial)
+                session.logger = newLogger
+                try await serial.start()
+            case .local:
+                return // nothing to reconnect — Local Terminal has no ConnectionSession
+            }
+            session.reconnectAttempt = 0
+            markConnected(profile)
+        } catch {
+            session.connectionIssue = Self.issue(from: error, isDisconnection: true)
+            connectionStates[profile.id] = .failed
+        }
+    }
+
+    func close(_ session: OpenSession) {
+        reconnectTasks[session.id]?.cancel()
+        reconnectTasks[session.id] = nil
+        switch session.kind {
+        case .ssh(let ssh):
+            Task { await ssh.close() }
+        case .telnet(let telnet):
+            Task { await telnet.close() }
+        case .serial(let serial):
+            Task { await serial.close() }
+        case .local:
+            break
+        }
+        session.logger.close()
+        openSessions.removeAll { $0.id == session.id }
+        broadcastTargetIDs.remove(session.id)
+        if activeSessionID == session.id {
+            activeSessionID = openSessions.last?.id
+        }
+        // Decision (UI spec §2): status resets to idle on tab close rather
+        // than persisting a stale `.failed`/`.connected` dot for a tab that
+        // isn't open anymore — a red dot from an old attempt is more
+        // confusing than useful once the tab is gone.
+        connectionStates[session.profile.id] = .idle
+    }
+
+    /// Marks a profile connected and stamps `lastConnectedAt` on the saved
+    /// profile (UI spec §1's "Recent" section reads that field). Harmless to
+    /// call for a profile that was never saved (e.g. Quick Connect) — `upsert`
+    /// just adds it.
+    private func markConnected(_ profile: SessionProfile) {
+        connectionStates[profile.id] = .connected
+        guard let profileStore else { return }
+        var updated = profile
+        updated.lastConnectedAt = Date()
+        profileStore.upsert(updated, secret: nil)
+    }
+
+    private static func issue(from error: Error?, isDisconnection: Bool = false) -> SSHConnectionIssue {
+        guard let error else {
+            return SSHConnectionIssue(
+                message: "The connection closed.",
+                isHostKeyMismatch: false,
+                isDisconnection: isDisconnection
+            )
+        }
+        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let isMismatch: Bool
+        if case SSHConnectionSession.SessionError.hostKeyMismatch = error {
+            isMismatch = true
+        } else {
+            isMismatch = false
+        }
+        return SSHConnectionIssue(message: message, isHostKeyMismatch: isMismatch, isDisconnection: isDisconnection)
+    }
+}

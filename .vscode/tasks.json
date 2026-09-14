@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "swift build",
+      "type": "shell",
+      "command": "rm -f build.log build.done; { swift build 2>&1; echo \"EXIT_CODE:$?\"; } > build.log; touch build.done",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}
