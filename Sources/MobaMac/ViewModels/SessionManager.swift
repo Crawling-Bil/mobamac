@@ -495,9 +495,26 @@ final class SessionManager: ObservableObject {
                 isDisconnection: isDisconnection
             )
         }
-        let message = (error as? LocalizedError)?.errorDescription
-            ?? (error as? NIOSSHError)?.friendlyDescription
-            ?? error.localizedDescription
+        let message: String
+        if let localizedMessage = (error as? LocalizedError)?.errorDescription {
+            message = localizedMessage
+        } else if let sshError = error as? NIOSSHError {
+            message = sshError.friendlyDescription
+        } else if String(describing: error).contains("ClientHandshakeHandler") {
+            // Citadel's ClientHandshakeHandler fails its handshake promise
+            // with a bare, private `Disconnected` marker error (see its
+            // `deinit`) whenever the channel tears down before the SSH
+            // handshake completes AND no other error was already caught --
+            // i.e. a silent close. It's a local type inside Citadel itself,
+            // so it can't be pattern-matched by type the way NIOSSHError
+            // is above; detecting it by its printed description is the
+            // only option, but it beats showing the raw
+            // "(unknown context at $...)" memory-address text this prints
+            // as by default.
+            message = "The connection closed before the SSH handshake even started — no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac — if that fails the same way, it confirms this isn't an app issue."
+        } else {
+            message = error.localizedDescription
+        }
         let isMismatch: Bool
         if case SSHConnectionSession.SessionError.hostKeyMismatch = error {
             isMismatch = true
