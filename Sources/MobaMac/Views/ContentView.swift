@@ -297,6 +297,8 @@ private struct SessionTabView: View {
                 switch session.kind {
                 case .ssh(let ssh):
                     SSHTerminalHostView(openSession: session, ssh: ssh)
+                case .ssh1(let ssh1):
+                    RawTerminalHostView(openSession: session, connection: ssh1)
                 case .telnet(let telnet):
                     RawTerminalHostView(openSession: session, connection: telnet)
                 case .serial(let serial):

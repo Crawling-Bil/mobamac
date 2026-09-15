@@ -16,12 +16,18 @@ let package = Package(
         .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0")
     ],
     targets: [
+        // Shim exposing Apple's CommonCrypto (DES/3DES) to Swift -- needed
+        // for the legacy SSH-1 fallback client, which has to speak the
+        // ciphers SSH-1-only gear actually offers (swift-crypto deliberately
+        // doesn't expose DES at all, not even under its Insecure namespace).
+        .systemLibrary(name: "CCommonCrypto", path: "Sources/CCommonCrypto"),
         .executableTarget(
             name: "MobaMac",
             dependencies: [
                 "SwiftTerm",
                 "Citadel",
-                .product(name: "ORSSerial", package: "ORSSerialPort")
+                .product(name: "ORSSerial", package: "ORSSerialPort"),
+                "CCommonCrypto"
             ],
             path: "Sources/MobaMac",
             // Manifest needs tools-version 6.0 for .macOS(.v15) above, but the

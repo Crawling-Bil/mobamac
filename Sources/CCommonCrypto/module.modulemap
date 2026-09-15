@@ -1,0 +1,8 @@
+// Exposes Apple's CommonCrypto (DES/3DES, part of libSystem, no separate
+// linking needed) to Swift as `import CCommonCrypto`. SwiftPM doesn't ship
+// a module map for this the way it does for Foundation, so this is the
+// standard shim pattern several SwiftPM crypto packages use.
+module CCommonCrypto [system] {
+    header "shim.h"
+    export *
+}

@@ -6,6 +6,10 @@ import NIOSSH
 
 enum OpenSessionKind {
     case ssh(SSHConnectionSession)
+    /// Automatic fallback used when a device only speaks SSH-1 (Citadel/
+    /// swift-nio-ssh refuse the handshake with `.unsupportedVersion`) --
+    /// see `SessionManager.openSSH` and `SSH1ConnectionSession`.
+    case ssh1(SSH1ConnectionSession)
     case telnet(TelnetConnectionSession)
     case serial(SerialConnectionSession)
     case local // handled directly by LocalProcessTerminalView, no ConnectionSession needed
@@ -151,12 +155,21 @@ final class SessionManager: ObservableObject {
         openSessions.first { $0.id == activeSessionID }
     }
 
+    private static func isSSHKind(_ kind: OpenSessionKind) -> Bool {
+        switch kind {
+        case .ssh, .ssh1:
+            return true
+        case .telnet, .serial, .local:
+            return false
+        }
+    }
+
     var openSSHSessionCount: Int {
-        openSessions.filter { if case .ssh = $0.kind { return true } else { return false } }.count
+        openSessions.filter { Self.isSSHKind($0.kind) }.count
     }
 
     var openSSHSessions: [OpenSession] {
-        openSessions.filter { if case .ssh = $0.kind { return true } else { return false } }
+        openSessions.filter { Self.isSSHKind($0.kind) }
     }
 
     func connectionState(for profileID: UUID) -> ConnectionState {
@@ -169,9 +182,15 @@ final class SessionManager: ObservableObject {
     /// just replicates the same input to the others that are in scope.
     func broadcast(_ data: Data, from senderID: OpenSession.ID) {
         for session in openSessions {
-            guard case .ssh(let ssh) = session.kind else { continue }
             guard broadcastTargetIDs.contains(session.id) else { continue }
-            Task { await ssh.send(data) }
+            switch session.kind {
+            case .ssh(let ssh):
+                Task { await ssh.send(data) }
+            case .ssh1(let ssh1):
+                Task { await ssh1.send(data) }
+            default:
+                continue
+            }
         }
     }
 
@@ -252,8 +271,66 @@ final class SessionManager: ObservableObject {
                 try await ssh.start()
                 self.markConnected(profile)
             } catch {
+                if Self.isSSH1OnlyError(error) {
+                    self.fallBackToSSH1(opened, originalProfile: profile, resolvedProfile: resolvedProfile, secret: resolvedSecret)
+                } else {
+                    opened.connectionIssue = Self.issue(from: error)
+                    self.connectionStates[profile.id] = .failed
+                }
+            }
+        }
+    }
+
+    /// True when Citadel/swift-nio-ssh rejected the handshake specifically
+    /// because the device only offers SSH-1 -- the one case where retrying
+    /// with `SSH1ConnectionSession` instead of just surfacing the error is
+    /// worthwhile (every other NIOSSHError is a real failure that would
+    /// fail the same way again).
+    private static func isSSH1OnlyError(_ error: Error) -> Bool {
+        guard let sshError = error as? NIOSSHError else { return false }
+        switch sshError.type {
+        case .unsupportedVersion:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Swaps `opened`'s tab from the SSH-2 attempt that just failed with
+    /// `.unsupportedVersion` into a from-scratch SSH-1 client, transparently
+    /// -- same tab, same profile, no new UI or profile field needed. Only
+    /// password auth is supported on this path; a profile using key-based
+    /// auth surfaces a clear error instead of silently trying a blank
+    /// password.
+    @MainActor
+    private func fallBackToSSH1(_ opened: OpenSession, originalProfile: SessionProfile, resolvedProfile: SessionProfile, secret: String?) {
+        guard resolvedProfile.authMethod == .password else {
+            opened.connectionIssue = SSHConnectionIssue(
+                message: "This device only speaks SSH-1, and MobaMac's SSH-1 fallback only supports password authentication (not key-based auth). Switch this profile to a password to connect.",
+                isHostKeyMismatch: false,
+                isDisconnection: false
+            )
+            connectionStates[originalProfile.id] = .failed
+            return
+        }
+
+        let ssh1 = SSH1ConnectionSession(host: resolvedProfile.host, port: resolvedProfile.port, username: resolvedProfile.username, password: secret)
+        opened.kind = .ssh1(ssh1)
+
+        ssh1.onClose = { [weak self, weak opened] error in
+            guard let self, let opened else { return }
+            Task { @MainActor in
+                self.handleUnexpectedClose(opened, error: error)
+            }
+        }
+
+        Task { @MainActor in
+            do {
+                try await ssh1.start()
+                self.markConnected(originalProfile)
+            } catch {
                 opened.connectionIssue = Self.issue(from: error)
-                self.connectionStates[profile.id] = .failed
+                self.connectionStates[originalProfile.id] = .failed
             }
         }
     }
@@ -429,6 +506,19 @@ final class SessionManager: ObservableObject {
                 session.kind = .ssh(ssh)
                 session.logger = newLogger
                 try await ssh.start()
+            case .ssh1:
+                let fallbackSecret = profileStore?.secret(for: profile)
+                let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
+                let ssh1 = SSH1ConnectionSession(host: resolvedProfile.host, port: resolvedProfile.port, username: resolvedProfile.username, password: resolvedSecret)
+                ssh1.onClose = { [weak self, weak session] error in
+                    guard let self, let session else { return }
+                    Task { @MainActor in
+                        self.handleUnexpectedClose(session, error: error)
+                    }
+                }
+                session.kind = .ssh1(ssh1)
+                session.logger = newLogger
+                try await ssh1.start()
             case .telnet:
                 let telnet = TelnetConnectionSession(host: profile.host, port: profile.port)
                 telnet.onClose = { [weak self, weak session] error in
@@ -471,6 +561,8 @@ final class SessionManager: ObservableObject {
         switch session.kind {
         case .ssh(let ssh):
             Task { await ssh.close() }
+        case .ssh1(let ssh1):
+            Task { await ssh1.close() }
         case .telnet(let telnet):
             Task { await telnet.close() }
         case .serial(let serial):
