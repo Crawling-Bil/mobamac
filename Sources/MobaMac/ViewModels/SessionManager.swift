@@ -238,14 +238,16 @@ final class SessionManager: ObservableObject {
 
         ssh.onClose = { [weak self, weak opened] error in
             guard let self, let opened else { return }
-            self.handleUnexpectedClose(opened, error: error)
+            Task { @MainActor in
+                self.handleUnexpectedClose(opened, error: error)
+            }
         }
 
         openSessions.append(opened)
         activeSessionID = opened.id
         connectionStates[profile.id] = .connecting
 
-        Task {
+        Task { @MainActor in
             do {
                 try await ssh.start()
                 self.markConnected(profile)
@@ -263,14 +265,16 @@ final class SessionManager: ObservableObject {
 
         telnet.onClose = { [weak self, weak opened] error in
             guard let self, let opened else { return }
-            self.handleUnexpectedClose(opened, error: error)
+            Task { @MainActor in
+                self.handleUnexpectedClose(opened, error: error)
+            }
         }
 
         openSessions.append(opened)
         activeSessionID = opened.id
         connectionStates[profile.id] = .connecting
 
-        Task {
+        Task { @MainActor in
             do {
                 try await telnet.start()
                 self.markConnected(profile)
@@ -291,14 +295,16 @@ final class SessionManager: ObservableObject {
 
         serial.onClose = { [weak self, weak opened] error in
             guard let self, let opened else { return }
-            self.handleUnexpectedClose(opened, error: error)
+            Task { @MainActor in
+                self.handleUnexpectedClose(opened, error: error)
+            }
         }
 
         openSessions.append(opened)
         activeSessionID = opened.id
         connectionStates[profile.id] = .connecting
 
-        Task {
+        Task { @MainActor in
             do {
                 try await serial.start()
                 self.markConnected(profile)
@@ -309,6 +315,7 @@ final class SessionManager: ObservableObject {
         }
     }
 
+    @MainActor
     func openLocal(profile: SessionProfile) {
         let logger = SessionLogger(profileName: profile.name)
         let opened = OpenSession(profile: profile, kind: .local, logger: logger)
@@ -324,7 +331,7 @@ final class SessionManager: ObservableObject {
         guard case .ssh(let ssh) = session.kind else { return }
         session.connectionIssue = nil
         connectionStates[session.profile.id] = .connecting
-        Task {
+        Task { @MainActor in
             do {
                 try await ssh.retryTrustingNewHostKey()
                 self.markConnected(session.profile)
@@ -342,7 +349,7 @@ final class SessionManager: ObservableObject {
     /// loop rather than just giving up after the one manual try.
     func reconnect(_ session: OpenSession) {
         reconnectTasks[session.id]?.cancel()
-        reconnectTasks[session.id] = Task { [weak self] in
+        reconnectTasks[session.id] = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.attemptReconnect(session)
             if session.connectionIssue != nil, session.profile.autoReconnect == true {
@@ -358,6 +365,7 @@ final class SessionManager: ObservableObject {
     /// `openSessions` synchronously before its own `Task { await x.close() }`
     /// finishes, so by the time that close is what triggers this callback,
     /// the guard below already sees the tab gone and does nothing.
+    @MainActor
     private func handleUnexpectedClose(_ session: OpenSession, error: Error?) {
         guard openSessions.contains(where: { $0.id == session.id }) else { return }
         session.connectionIssue = Self.issue(from: error, isDisconnection: true)
@@ -372,9 +380,10 @@ final class SessionManager: ObservableObject {
     /// over, or an attempt actually succeeds. Awaits `attemptReconnect`
     /// directly rather than firing it and moving on, so there's never more
     /// than one connection attempt in flight for this tab at a time.
+    @MainActor
     private func startAutoReconnect(_ session: OpenSession) {
         reconnectTasks[session.id]?.cancel()
-        reconnectTasks[session.id] = Task { [weak self] in
+        reconnectTasks[session.id] = Task { @MainActor [weak self] in
             guard let self else { return }
             for attempt in 1...Self.maxAutoReconnectAttempts {
                 if Task.isCancelled { return }
@@ -397,6 +406,7 @@ final class SessionManager: ObservableObject {
     /// scrollback-adjacent chrome, and its place in the tab bar are all
     /// undisturbed), and gives it a fresh timestamped log file rather than
     /// appending to the previous attempt's log.
+    @MainActor
     private func attemptReconnect(_ session: OpenSession) async {
         session.connectionIssue = nil
         connectionStates[session.profile.id] = .connecting
@@ -412,7 +422,9 @@ final class SessionManager: ObservableObject {
                 let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
                 ssh.onClose = { [weak self, weak session] error in
                     guard let self, let session else { return }
-                    self.handleUnexpectedClose(session, error: error)
+                    Task { @MainActor in
+                        self.handleUnexpectedClose(session, error: error)
+                    }
                 }
                 session.kind = .ssh(ssh)
                 session.logger = newLogger
@@ -421,7 +433,9 @@ final class SessionManager: ObservableObject {
                 let telnet = TelnetConnectionSession(host: profile.host, port: profile.port)
                 telnet.onClose = { [weak self, weak session] error in
                     guard let self, let session else { return }
-                    self.handleUnexpectedClose(session, error: error)
+                    Task { @MainActor in
+                        self.handleUnexpectedClose(session, error: error)
+                    }
                 }
                 session.kind = .telnet(telnet)
                 session.logger = newLogger
@@ -433,7 +447,9 @@ final class SessionManager: ObservableObject {
                 )
                 serial.onClose = { [weak self, weak session] error in
                     guard let self, let session else { return }
-                    self.handleUnexpectedClose(session, error: error)
+                    Task { @MainActor in
+                        self.handleUnexpectedClose(session, error: error)
+                    }
                 }
                 session.kind = .serial(serial)
                 session.logger = newLogger
@@ -479,6 +495,7 @@ final class SessionManager: ObservableObject {
     /// profile (UI spec §1's "Recent" section reads that field). Harmless to
     /// call for a profile that was never saved (e.g. Quick Connect) — `upsert`
     /// just adds it.
+    @MainActor
     private func markConnected(_ profile: SessionProfile) {
         connectionStates[profile.id] = .connected
         guard let profileStore else { return }
