@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import SwiftTerm
 import AppKit
+import NIOSSH
 
 enum OpenSessionKind {
     case ssh(SSHConnectionSession)
@@ -494,7 +495,9 @@ final class SessionManager: ObservableObject {
                 isDisconnection: isDisconnection
             )
         }
-        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let message = (error as? LocalizedError)?.errorDescription
+            ?? (error as? NIOSSHError)?.friendlyDescription
+            ?? error.localizedDescription
         let isMismatch: Bool
         if case SSHConnectionSession.SessionError.hostKeyMismatch = error {
             isMismatch = true

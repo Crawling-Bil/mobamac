@@ -259,7 +259,41 @@ final class SSHConnectionSession: ConnectionSession {
             }
         }
     }
+}
 
+/// `NIOSSHError` doesn't conform to `LocalizedError`, so left alone it
+/// bridges to a generic, useless `NSError` string like "The operation
+/// couldn't be completed. (NIOSSH.NIOSSHError error 1.)" — that "1" is
+/// not meaningful; every `NIOSSHError` bridges to the same code since
+/// the type has no custom `CustomNSError` conformance. The real
+/// diagnostic lives in `.type`/`.description`, which this maps into
+/// something the user can act on — especially the handshake-level
+/// failures that show up when talking to network gear (routers,
+/// switches, firewalls) that only offers legacy/weak SSH algorithms
+/// this library intentionally refuses to use.
+extension NIOSSHError {
+    var friendlyDescription: String {
+        switch self.type {
+        case .weakSharedSecret:
+            return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group — common on older routers/switches/firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
+        case .keyExchangeNegotiationFailure:
+            return "Couldn't agree on an SSH key-exchange algorithm with this device — it likely only offers older algorithms (e.g. diffie-hellman-group1-sha1) that this app won't use for security reasons. This is common with older network gear; check whether a newer algorithm can be enabled on the device."
+        case .unsupportedVersion:
+            return "This device's SSH version isn't supported (this app requires SSH-2.0). Very old gear that only speaks SSH-1 can't be used here."
+        case .invalidHostKeyForKeyExchange, .invalidExchangeHashSignature:
+            return "The device's host key didn't match what was negotiated during the handshake. This can mean something between you and the device is intercepting the connection, or the device has a buggy SSH server."
+        case .tcpShutdown:
+            return "The connection closed unexpectedly during the SSH handshake. Check that nothing — a firewall, VPN, or the device itself — is dropping the connection partway through, and that the device is actually reachable on this network."
+        case .invalidUserAuthSignature:
+            return "The device rejected the authentication signature. Double-check the username/password or key configured for this session."
+        default:
+            return "SSH error: \(self.description). This is usually a protocol- or algorithm-level mismatch with the device rather than a plain network issue."
+        }
+    }
+}
+
+@available(macOS 15.0, *)
+extension SSHConnectionSession {
     /// Bridges NIOSSH's host-key callback to `KnownHostsStore`. TOFU: the
     /// first key seen for a host:port is trusted and remembered; a later
     /// mismatch fails the handshake instead of silently accepting it, which
