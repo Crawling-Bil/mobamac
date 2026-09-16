@@ -81,7 +81,24 @@ final class SSHConnectionSession: ConnectionSession {
             )
         )
 
-        let client = try await SSHClient.connect(to: settings)
+        // Connect the raw socket ourselves (rather than the one-shot
+        // `SSHClient.connect(to:)`) so `SSH199CompatibilityHandler` can sit
+        // in the pipeline in front of NIOSSHHandler -- see that type's doc
+        // comment for why: some fully SSH-2-capable gear (Cisco IOS,
+        // PAN-OS) advertises "SSH-1.99-..." and swift-nio-ssh rejects that
+        // outright even though it shouldn't. Bootstrap options mirror what
+        // Citadel's own `SSHClientSession.connect(settings:)` sets up
+        // internally, since we're now doing that step ourselves.
+        let bootstrap = ClientBootstrap(group: settings.group)
+            .connectTimeout(settings.connectTimeout)
+            .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
+            .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
+            .channelInitializer { channel in
+                channel.pipeline.addHandler(SSH199CompatibilityHandler())
+            }
+        let channel = try await bootstrap.connect(host: settings.host, port: settings.port).get()
+
+        let client = try await SSHClient.connect(on: channel, settings: settings)
         self.client = client
 
         let request = SSHChannelRequestEvent.PseudoTerminalRequest(
