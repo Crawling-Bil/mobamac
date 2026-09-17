@@ -1,10 +1,10 @@
 # MobaMac
 
-A native macOS SSH/terminal client — a MobaXterm-style alternative built for Mac.
+A native macOS SSH/terminal client, a MobaXterm-style alternative built for Mac.
 
 ## Download
 
-Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/mobamac/releases/latest).
+Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/mobamac/releases/latest). [CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
 
 ## Features
 
