@@ -182,7 +182,7 @@ final class SSHConnectionSession: ConnectionSession {
                 return .ed25519(username: username, privateKey: key)
             default:
                 throw SessionError.privateKeyFormatUnsupported(
-                    reason: "\(keyType.description) keys aren't supported yet — only RSA and Ed25519 OpenSSH keys are."
+                    reason: "\(keyType.description) keys aren't supported yet. Only RSA and Ed25519 OpenSSH keys are."
                 )
             }
         } catch let error as SessionError {
@@ -275,11 +275,11 @@ final class SSHConnectionSession: ConnectionSession {
                     ? "Couldn't decrypt this private key. Double-check the passphrase."
                     : "This private key appears to be passphrase-protected. Enter its passphrase in the session's Key Passphrase field and try again."
             case .agentAuthNotYetImplemented:
-                return "SSH agent authentication isn't implemented yet — use password or private key auth instead."
+                return "SSH agent authentication isn't implemented yet. Use password or private key auth instead."
             case .notConnected:
                 return "Not connected."
             case .hostKeyMismatch(let previousFingerprint, let newFingerprint):
-                return "The host key for this server changed since last time (expected \(previousFingerprint), got \(newFingerprint)). This can mean the server was reinstalled, or that something is intercepting the connection — only continue if you're sure."
+                return "The host key for this server changed since last time (expected \(previousFingerprint), got \(newFingerprint)). This can mean the server was reinstalled, or that something is intercepting the connection. Only continue if you're sure."
             }
         }
     }
@@ -299,15 +299,15 @@ extension NIOSSHError {
     var friendlyDescription: String {
         switch self.type {
         case .weakSharedSecret:
-            return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group — common on older routers/switches/firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
+            return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group, which is common on older routers, switches and firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
         case .keyExchangeNegotiationFailure:
-            return "Couldn't agree on an SSH key-exchange algorithm with this device — it likely only offers older algorithms (e.g. diffie-hellman-group1-sha1) that this app won't use for security reasons. This is common with older network gear; check whether a newer algorithm can be enabled on the device."
+            return "Couldn't agree on an SSH key-exchange algorithm with this device. It likely only offers older algorithms (e.g. diffie-hellman-group1-sha1) that this app won't use for security reasons. This is common with older network gear; check whether a newer algorithm can be enabled on the device."
         case .unsupportedVersion:
             return "This device's SSH version isn't supported (this app requires SSH-2.0). Very old gear that only speaks SSH-1 can't be used here."
         case .invalidHostKeyForKeyExchange, .invalidExchangeHashSignature:
             return "The device's host key didn't match what was negotiated during the handshake. This can mean something between you and the device is intercepting the connection, or the device has a buggy SSH server."
         case .tcpShutdown:
-            return "The connection closed unexpectedly during the SSH handshake. Check that nothing — a firewall, VPN, or the device itself — is dropping the connection partway through, and that the device is actually reachable on this network."
+            return "The connection closed unexpectedly during the SSH handshake. Check that nothing (a firewall, VPN, or the device itself) is dropping the connection partway through, and that the device is actually reachable on this network."
         case .invalidUserAuthSignature:
             return "The device rejected the authentication signature. Double-check the username/password or key configured for this session."
         default:

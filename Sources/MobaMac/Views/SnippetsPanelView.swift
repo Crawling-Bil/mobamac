@@ -202,12 +202,12 @@ private struct SnippetEditSheet: View {
                     }
                 }
             Text(shortcutKey.isEmpty
-                 ? "Set a letter or digit to fire this snippet with ⌥⌘ + that key from anywhere in the app — no need to open this panel."
+                 ? "Set a letter or digit to fire this snippet with ⌥⌘ + that key from anywhere in the app, no need to open this panel."
                  : "Fires with ⌥⌘\(shortcutKey) from anywhere in the app, including while a terminal is focused.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let duplicateShortcutName {
-                Text("⚠️ \"\(duplicateShortcutName)\" already uses ⌥⌘\(shortcutKey) — only one of them will actually fire.")
+                Text("⚠️ \"\(duplicateShortcutName)\" already uses ⌥⌘\(shortcutKey). Only one of them will actually fire.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }

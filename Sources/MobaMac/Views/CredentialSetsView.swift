@@ -45,7 +45,7 @@ struct CredentialSetsView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(set.name).font(.body.bold())
-                                Text("\(set.username.isEmpty ? "(no username)" : set.username) — \(set.authMethod.displayName)")
+                                Text("\(set.username.isEmpty ? "(no username)" : set.username) · \(set.authMethod.displayName)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

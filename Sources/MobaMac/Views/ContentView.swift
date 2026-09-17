@@ -244,7 +244,7 @@ struct ContentView: View {
 
     private var broadcastBannerText: String {
         let count = sessionManager.broadcastTargetIDs.count
-        return "Broadcast is ON — keystrokes are shared across \(count) opted-in SSH tab\(count == 1 ? "" : "s")."
+        return "Broadcast is ON. Keystrokes are shared across \(count) opted-in SSH tab\(count == 1 ? "" : "s")."
     }
 
     private var emptyState: some View {
@@ -276,7 +276,7 @@ private struct HighlightToggleButton: View {
             Label("Highlight", systemImage: "highlighter")
         }
         .tint(session.highlightingEnabled ? .yellow : nil)
-        .help("Buffers output per line to highlight IPs, MAC addresses, and status/errors. Adds latency — including your own typed echo — until Enter is pressed, which is why it's off by default per session.")
+        .help("Buffers output per line to highlight IPs, MAC addresses, and status/errors. Adds latency (including your own typed echo) until Enter is pressed, which is why it's off by default per session.")
     }
 }
 
@@ -332,7 +332,7 @@ private struct SessionTabView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
             if session.reconnectAttempt > 0 {
-                Text("Reconnecting… \(session.reconnectAttempt)/20")
+                Text("Reconnecting… \(session.reconnectAttempt)/\(SessionManager.maxAutoReconnectAttempts)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -349,6 +349,19 @@ private struct SessionTabView: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("r", modifiers: .command)
                     .help("Reconnect this session (⌘R).")
+                } else {
+                    // A connection that never came up at all still deserves a
+                    // retry: plenty of these are transient (the device was
+                    // out of SSH sessions, the handshake timed out, the link
+                    // was briefly down), and the alternative is closing the
+                    // tab and walking back through the sidebar and its
+                    // confirmation dialog to try the same thing again.
+                    Button("Try Again") {
+                        sessionManager.reconnect(session)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Try this connection again (⌘R).")
                 }
                 Button("Close Tab") {
                     sessionManager.close(session)

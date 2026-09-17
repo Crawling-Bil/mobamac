@@ -30,11 +30,13 @@ struct SSHConnectionIssue {
     /// dropped (network blip, device reboot, idle timeout despite
     /// keepalive) rather than never having connected at all. Drives whether
     /// the "Reconnect" button (UI spec §9.2) is offered: a session that was
-    /// fine and dropped almost always just needs a fresh connection, while a
-    /// pre-connection failure (bad host, bad credentials, rejected key) will
-    /// usually just fail the same way again, so those still only offer
-    /// "Close Tab" (plus "Trust New Key & Reconnect" for a host-key
-    /// mismatch, which is its own distinct recovery path).
+    /// fine and dropped gets "Reconnect", while a failure that never
+    /// connected at all gets "Try Again" instead: some of those are
+    /// permanent (bad host, wrong credentials) but plenty are not (the
+    /// device was out of SSH sessions, a handshake timed out), and making
+    /// someone close the tab and walk back through the sidebar to retry
+    /// one of those is worse than offering a button that sometimes fails
+    /// again. A host-key mismatch keeps its own distinct recovery path.
     let isDisconnection: Bool
 }
 
@@ -149,7 +151,9 @@ final class SessionManager: ObservableObject {
     /// there's never more than one attempt racing another for the same tab.
     private var reconnectTasks: [OpenSession.ID: Task<Void, Never>] = [:]
 
-    private static let maxAutoReconnectAttempts = 20
+    /// Read by ContentView's "Reconnecting… x/y" label too, so the
+    /// number a user sees always matches the number actually used.
+    static let maxAutoReconnectAttempts = 20
     private static let autoReconnectDelaySeconds: UInt64 = 15
 
     var activeSession: OpenSession? {
@@ -641,7 +645,7 @@ final class SessionManager: ObservableObject {
             // only option, but it beats showing the raw
             // "(unknown context at $...)" memory-address text this prints
             // as by default.
-            message = "The connection closed before the SSH handshake even started — no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac — if that fails the same way, it confirms this isn't an app issue."
+            message = "The connection closed before the SSH handshake even started, and no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac. If that fails the same way, it confirms this isn't an app issue."
         } else if let channelError = error as? ChannelError {
             message = Self.describe(channelError)
         } else {

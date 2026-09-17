@@ -141,7 +141,7 @@ struct NewSessionSheet: View {
                         Text(set.name).tag(Optional(set.id))
                     }
                 }
-                .help("Reuse a saved username and login across many profiles instead of typing one in below — update it once here and every profile using it picks up the change.")
+                .help("Reuse a saved username and login across many profiles instead of typing one in below. Update it once here and every profile using it picks up the change.")
 
                 if credentialSetID == nil {
                     TextField("Username", text: $username)
@@ -155,7 +155,7 @@ struct NewSessionSheet: View {
                         SecureField(isEditing ? "Password (leave blank to keep current)" : "Password", text: $secret)
                     case .privateKey:
                         TextField("Private key path", text: $privateKeyPath)
-                        Text("OpenSSH-format RSA or Ed25519 keys only (\"-----BEGIN OPENSSH PRIVATE KEY-----\"). Encrypted keys work too — enter the passphrase below.")
+                        Text("OpenSSH-format RSA or Ed25519 keys only (\"-----BEGIN OPENSSH PRIVATE KEY-----\"). Encrypted keys work too. Enter the passphrase below.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         SecureField(isEditing ? "Key passphrase (leave blank to keep current)" : "Key passphrase (leave blank if the key isn't encrypted)", text: $secret)
@@ -182,14 +182,14 @@ struct NewSessionSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .help("Sends a harmless keystroke once the session has been idle this long, so the device's own idle timeout doesn't drop the connection. Some hardened environments log this as activity — set to 0 there.")
+                .help("Sends a harmless keystroke once the session has been idle this long, so the device's own idle timeout doesn't drop the connection. Some hardened environments log this as activity, so set it to 0 there.")
 
                 Toggle("Auto-reconnect", isOn: $autoReconnect)
-                    .help("Automatically retry every 15s (up to 20 attempts) if this session disconnects. Off by default — retrying into a device mid-reboot can catch it half-booted.")
+                    .help("Automatically retry every 15s (up to 20 attempts) if this session disconnects. Off by default, because retrying into a device mid-reboot can catch it half-booted.")
             }
 
             if kind == .telnet {
-                Text("Telnet sends everything — including passwords — in plain text. Only use it for legacy gear that doesn't support SSH.")
+                Text("Telnet sends everything, passwords included, in plain text. Only use it for legacy gear that doesn't support SSH.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }

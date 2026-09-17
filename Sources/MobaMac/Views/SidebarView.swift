@@ -29,7 +29,7 @@ private struct StatusDot: View {
 
     private var helpText: String {
         switch state {
-        case .idle: return "Idle — saved, not currently connected."
+        case .idle: return "Idle. Saved, not currently connected."
         case .connecting: return "Connecting…"
         case .connected: return "Connected."
         case .failed: return "Last connection attempt failed."

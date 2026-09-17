@@ -23,12 +23,12 @@ struct ManageFoldersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Manage Folders").font(.title2.bold())
-            Text("Customer and Device Type folders for the sidebar tree. Deleting a folder doesn't delete its sessions — they move to Ungrouped.")
+            Text("Customer and Device Type folders for the sidebar tree. Deleting a folder doesn't delete its sessions. They move to Ungrouped.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             if profileStore.customerGroups.isEmpty {
-                Text("No folders yet — add a customer below to get started.")
+                Text("No folders yet. Add a customer below to get started.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)

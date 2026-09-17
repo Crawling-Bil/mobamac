@@ -53,7 +53,7 @@ struct QuickConnectSheet: View {
                 TextField("Username", text: $username)
                 SecureField("Password", text: $password)
             } else {
-                Text("Telnet sends everything — including passwords — in plain text.")
+                Text("Telnet sends everything, passwords included, in plain text.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
