@@ -81,31 +81,22 @@ final class SSHConnectionSession: ConnectionSession {
             )
         )
 
-        // Connect the raw socket ourselves (rather than the one-shot
-        // `SSHClient.connect(to:)`) so `SSH199CompatibilityHandler` can sit
-        // in the pipeline in front of NIOSSHHandler -- see that type's doc
-        // comment for why: some fully SSH-2-capable gear (Cisco IOS,
-        // PAN-OS) advertises "SSH-1.99-..." and swift-nio-ssh rejects that
-        // outright even though it shouldn't. Bootstrap options mirror what
-        // Citadel's own `SSHClientSession.connect(settings:)` sets up
-        // internally, since we're now doing that step ourselves.
-        let bootstrap = ClientBootstrap(group: settings.group)
-            .connectTimeout(settings.connectTimeout)
-            .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
-            .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
-            // Reading starts only once Citadel's handlers are in the
-            // pipeline -- SSH199CompatibilityHandler turns autoRead back on
-            // the moment NIOSSHHandler announces itself with its first
-            // flush. Until then the server's banner stays in the kernel
-            // buffer, which keeps it from being delivered into a pipeline
-            // that has nothing downstream to receive it yet.
-            .channelOption(ChannelOptions.autoRead, value: false)
-            .channelInitializer { channel in
-                channel.pipeline.addHandler(SSH199CompatibilityHandler())
-            }
-        let channel = try await bootstrap.connect(host: settings.host, port: settings.port).get()
-
-        let client = try await SSHClient.connect(on: channel, settings: settings)
+        // NOTE: do not switch this to `SSHClient.connect(on: channel,)` in
+        // order to slip an extra ChannelHandler in front of NIOSSHHandler
+        // (the obvious way to rewrite an "SSH-1.99" version banner into
+        // "SSH-2.0"). It was tried in 1.4/1.6 and broke every SSH
+        // connection. Citadel's `connect(on:)` calls
+        // `pipeline.syncOperations.addHandlers(...)` straight from the
+        // async caller's thread rather than hopping to the event loop, and
+        // the only thing stopping that is an `assertInEventLoop()` that
+        // release builds compile out. So NIOSSHHandler.handlerAdded, and
+        // with it the write and flush of our own version string, all run
+        // off the event loop, and `ChannelHandlerContext.flush()`/`read()`
+        // don't hop either. The handshake then stalls until Citadel's 10s
+        // login timeout fires. `connect(to:)` below installs the same
+        // handlers from inside the bootstrap's channelInitializer, which
+        // does run on the event loop.
+        let client = try await SSHClient.connect(to: settings)
         self.client = client
 
         let request = SSHChannelRequestEvent.PseudoTerminalRequest(
@@ -303,6 +294,14 @@ extension NIOSSHError {
         case .keyExchangeNegotiationFailure:
             return "Couldn't agree on an SSH key-exchange algorithm with this device. It likely only offers older algorithms (e.g. diffie-hellman-group1-sha1) that this app won't use for security reasons. This is common with older network gear; check whether a newer algorithm can be enabled on the device."
         case .unsupportedVersion:
+            if self.description.contains("SSH-1.99") {
+                // RFC 4253 5: "1.99" means the server speaks SSH-2 and is
+                // only keeping the 1.x label so SSH-1 clients still
+                // connect. swift-nio-ssh rejects the banner anyway, so say
+                // what's actually happening instead of blaming the device
+                // for being old, and give the one-line device-side fix.
+                return "This device reports SSH version 1.99, which means it does speak SSH-2 and is only advertising 1.99 so that old SSH-1 clients can still connect. The SSH library this app is built on refuses that banner instead of treating it as SSH-2.0. The fix is on the device: \"ip ssh version 2\" on Cisco IOS, or the equivalent setting on other gear, makes it advertise SSH-2.0 and connect normally."
+            }
             return "This device's SSH version isn't supported (this app requires SSH-2.0). Very old gear that only speaks SSH-1 can't be used here."
         case .invalidHostKeyForKeyExchange, .invalidExchangeHashSignature:
             return "The device's host key didn't match what was negotiated during the handshake. This can mean something between you and the device is intercepting the connection, or the device has a buggy SSH server."

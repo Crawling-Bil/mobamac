@@ -295,7 +295,14 @@ final class SessionManager: ObservableObject {
         guard let sshError = error as? NIOSSHError else { return false }
         switch sshError.type {
         case .unsupportedVersion:
-            return true
+            // A "SSH-1.99" banner means the device speaks SSH-2 perfectly
+            // well and is only advertising SSH-1 compatibility alongside
+            // it. Falling back to the SSH-1 client there would quietly
+            // downgrade a working modern connection to a protocol that was
+            // broken by design, so those get an explanatory error instead
+            // (see NIOSSHError.friendlyDescription). Only a device that
+            // really offers nothing but SSH-1 routes to the fallback.
+            return !String(describing: sshError).contains("SSH-1.99")
         default:
             return false
         }
