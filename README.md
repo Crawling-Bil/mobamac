@@ -22,7 +22,7 @@ Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/m
 2. Unzip it, then drag `MobaMac.app` into your Applications folder
 3. First launch: right-click the app → **Open** → click **Open** again in the popup
 
-(Step 3 is needed because the app isn't from the App Store — macOS blocks it by default the first time.)
+(Step 3 is needed because the app isn't from the App Store, so macOS blocks it by default the first time.)
 
 ## Building from source
 
