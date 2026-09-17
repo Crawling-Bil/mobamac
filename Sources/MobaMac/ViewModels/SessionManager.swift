@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import SwiftTerm
 import AppKit
+import NIO
 import NIOSSH
 
 enum OpenSessionKind {
@@ -596,6 +597,26 @@ final class SessionManager: ObservableObject {
         profileStore.upsert(updated, secret: nil)
     }
 
+    /// Plain-language text for the NIO channel errors that actually reach
+    /// a user here. `ChannelError` doesn't conform to `LocalizedError`, so
+    /// without this it bridges to "(NIOCore.ChannelError error 0.)" -- and
+    /// error 0 is `connectTimeout`, the most common one of the set, which
+    /// is exactly the case someone needs a real explanation for.
+    private static func describe(_ error: ChannelError) -> String {
+        switch error {
+        case .connectTimeout:
+            return "The device accepted the TCP connection but never finished the SSH handshake in time. The port is open and something is listening, so this is usually the SSH service itself refusing to proceed: an ACL that allows the TCP connection but drops SSH, or a device that's out of available SSH sessions. Try \"ssh -vvv <user>@<host>\" from Terminal to see how far it gets."
+        case .eof, .inputClosed, .outputClosed, .alreadyClosed, .ioOnClosedChannel:
+            return "The device closed the connection. If that happened immediately after connecting, it usually means the device hit its session limit or rejected this source address."
+        case .connectPending:
+            return "A connection attempt to this device is already in progress."
+        case .operationUnsupported, .inappropriateOperationForState:
+            return "The connection was used in a way it doesn't support. That's a bug in MobaMac rather than a problem with the device."
+        default:
+            return "Network error: \(error)."
+        }
+    }
+
     private static func issue(from error: Error?, isDisconnection: Bool = false) -> SSHConnectionIssue {
         guard let error else {
             return SSHConnectionIssue(
@@ -621,8 +642,19 @@ final class SessionManager: ObservableObject {
             // "(unknown context at $...)" memory-address text this prints
             // as by default.
             message = "The connection closed before the SSH handshake even started — no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac — if that fails the same way, it confirms this isn't an app issue."
+        } else if let channelError = error as? ChannelError {
+            message = Self.describe(channelError)
         } else {
-            message = error.localizedDescription
+            // NSError bridging turns a plain Swift error into "The operation
+            // couldn't be completed. (SomeModule.SomeError error 3.)" -- that
+            // number is the enum case index, which means nothing to whoever
+            // is reading it and nothing in a bug report either. When that's
+            // the shape we'd be showing, use Swift's own description
+            // instead: it at least names the actual case.
+            let bridged = error.localizedDescription
+            let isUselessBridgedText = bridged.contains("operation couldn't be completed")
+                || bridged.contains("operation couldn\u{2019}t be completed")
+            message = isUselessBridgedText ? "Connection failed: \(String(describing: error))" : bridged
         }
         let isMismatch: Bool
         if case SSHConnectionSession.SessionError.hostKeyMismatch = error {

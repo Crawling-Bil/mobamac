@@ -3,92 +3,118 @@ import NIO
 /// Works around a real limitation in swift-nio-ssh: RFC 4253 §5 says a
 /// server that sends the version string "SSH-1.99-..." supports SSH-2 and
 /// only kept "1.99" instead of "2.0" for backward compatibility with SSH-1
-/// clients -- a conforming client MUST treat "1.99" exactly like "2.0".
+/// clients, so a conforming client must treat "1.99" exactly like "2.0".
 /// swift-nio-ssh doesn't implement that carve-out: its version check
-/// (`AcceptsVersionMessages.validateVersion`) does a literal
-/// `bytes[4..<7] == "2.0"` comparison and throws `NIOSSHError
-/// .unsupportedVersion` for anything else -- confirmed by reading its
-/// source directly (Sources/NIOSSH/Connection State
-/// Machine/Operations/AcceptsVersionMessages.swift).
+/// (`AcceptsVersionMessages.validateVersion`) compares bytes 4..<7 against
+/// "2.0" literally and throws `NIOSSHError.unsupportedVersion` for anything
+/// else. Cisco IOS and PAN-OS both advertise "SSH-1.99-..." by default
+/// unless hardened to `ip ssh version 2`, so plenty of fully SSH-2-capable
+/// gear gets rejected before the real handshake ever starts.
 ///
-/// In practice this rejects perfectly modern, fully SSH-2-capable gear:
-/// Cisco IOS and PAN-OS both default to advertising "SSH-1.99-..." (dual
-/// v1/v2 backward-compat mode) unless an admin has explicitly hardened the
-/// device to `ip ssh version 2`. That's almost certainly what's behind
-/// devices that report modern algorithms (`aes256-gcm`, `ecdsa-sha2-*`,
-/// etc. -- see `show ip ssh`) yet still hit `unsupportedVersion` in this
-/// app: they're not SSH-1-only, swift-nio-ssh is just being stricter than
-/// the RFC requires.
+/// This handler sits on the raw socket in front of `NIOSSHHandler` and
+/// rewrites that one line ("SSH-1.99-" becomes "SSH-2.0-") before
+/// NIOSSHHandler parses it. Everything after the banner is forwarded byte
+/// for byte.
 ///
-/// This handler sits directly on the raw socket, in front of
-/// `NIOSSHHandler`, and looks only at the server's very first line (the
-/// version banner). If it starts with "SSH-1.99-", it's rewritten in place
-/// to "SSH-2.0-" before `NIOSSHHandler` ever sees it. Either way, once that
-/// one line has been handled, this handler removes itself from the
-/// pipeline -- every byte after that (the real, binary, eventually-
-/// encrypted SSH-2 conversation) passes through completely untouched. A
-/// genuinely SSH-1-only device (a banner like "SSH-1.5-..." with no "1.99")
-/// is left alone here and still fails with `unsupportedVersion` exactly as
-/// before, which is what lets `SessionManager` fall back to
-/// `SSH1ConnectionSession` for those.
-final class SSH199CompatibilityHandler: ChannelInboundHandler, RemovableChannelHandler {
+/// Two ordering hazards this has to respect, both learned the hard way:
+///
+/// 1. The socket is connected (and therefore already readable) before
+///    Citadel installs `NIOSSHHandler`, so the server's banner can arrive
+///    while this handler is still the only one in the pipeline. Anything
+///    forwarded then goes nowhere and the handshake stalls until Citadel's
+///    10s login timeout fires (surfacing as `ChannelError.connectTimeout`).
+///    So inbound bytes are held here until downstream is known to exist.
+/// 2. The signal for "downstream exists" is the first outbound flush:
+///    `NIOSSHHandler.handlerAdded` writes its own version string and
+///    flushes immediately when it joins an already-active channel, and that
+///    flush travels out through this handler. No polling, no timers.
+///
+/// A genuinely SSH-1-only banner ("SSH-1.5-...", no "1.99") is passed
+/// through untouched and still fails with `unsupportedVersion`, which is
+/// what lets `SessionManager` fall back to `SSH1ConnectionSession`.
+final class SSH199CompatibilityHandler: ChannelDuplexHandler {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
+    typealias OutboundIn = ByteBuffer
+    typealias OutboundOut = ByteBuffer
 
     private static let legacyPrefix = "SSH-1.99-"
     private static let rewrittenPrefix = "SSH-2.0-"
-    /// Real banners are well under this (RFC 4253 caps them at 255 bytes);
-    /// bail out rather than buffering forever if a peer never sends "\n".
+    /// RFC 4253 caps a banner at 255 bytes. Well past that without a
+    /// newline means this isn't a version line at all, so stop holding on
+    /// to it and let NIOSSHHandler report whatever it actually is.
     private static let maxBannerBytes = 1024
 
     private var buffer = ByteBuffer()
-    private var finishedWithBanner = false
+    private var downstreamReady = false
+    private var bannerHandled = false
+
+    func flush(context: ChannelHandlerContext) {
+        context.flush()
+        guard !downstreamReady else { return }
+        downstreamReady = true
+
+        // The channel is connected with autoRead off (see
+        // SSHConnectionSession.connect) so that nothing is read off the
+        // socket while Citadel is still adding its handlers. Now that
+        // NIOSSHHandler is demonstrably in the pipeline, reading can start:
+        // the bytes the server already sent are waiting in the kernel
+        // buffer, not lost.
+        context.channel.setOption(ChannelOptions.autoRead, value: true).whenComplete { _ in }
+        context.read()
+
+        // With autoRead off there is normally nothing buffered here yet
+        // (no read has happened), so this is a no-op in the common case.
+        // It matters only if a read somehow landed before NIOSSHHandler
+        // arrived, in which case those bytes still have to go somewhere.
+        deliver(context: context)
+    }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        guard !finishedWithBanner else {
+        if downstreamReady, bannerHandled {
             context.fireChannelRead(data)
             return
         }
-
         var incoming = unwrapInboundIn(data)
         buffer.writeBuffer(&incoming)
-
-        guard let newlineIndex = buffer.readableBytesView.firstIndex(of: UInt8(ascii: "\n")) else {
-            if buffer.readableBytes > Self.maxBannerBytes {
-                // Something other than a normal SSH version line -- stop
-                // touching the stream and let NIOSSHHandler deal with (and
-                // report on) whatever this actually is.
-                context.pipeline.removeHandler(context: context, promise: nil)
-                finishAndForwardRemainder(context: context)
-            }
-            return
-        }
-
-        let lineLength = newlineIndex + 1 - buffer.readerIndex
-        guard var line = buffer.readSlice(length: lineLength) else { return }
-
-        if let lineText = line.getString(at: line.readerIndex, length: line.readableBytes),
-           lineText.hasPrefix(Self.legacyPrefix) {
-            let rewritten = Self.rewrittenPrefix + lineText.dropFirst(Self.legacyPrefix.count)
-            var newLine = context.channel.allocator.buffer(capacity: rewritten.utf8.count)
-            newLine.writeString(rewritten)
-            line = newLine
-        }
-
-        finishedWithBanner = true
-        context.pipeline.removeHandler(context: context, promise: nil)
-        context.fireChannelRead(wrapInboundOut(line))
-        finishAndForwardRemainder(context: context)
+        deliver(context: context)
     }
 
-    /// Forwards whatever's left in `buffer` (bytes from the same read that
-    /// arrived after the version line, if any) and marks this handler done.
-    private func finishAndForwardRemainder(context: ChannelHandlerContext) {
-        finishedWithBanner = true
-        if buffer.readableBytes > 0 {
-            let remainder = buffer
-            buffer = ByteBuffer()
-            context.fireChannelRead(wrapInboundOut(remainder))
+    private func deliver(context: ChannelHandlerContext) {
+        guard downstreamReady else { return }
+
+        if !bannerHandled {
+            guard let newlineIndex = buffer.readableBytesView.firstIndex(of: UInt8(ascii: "\n")) else {
+                if buffer.readableBytes > Self.maxBannerBytes {
+                    bannerHandled = true
+                    forwardRemainder(context: context)
+                }
+                return
+            }
+
+            let lineLength = newlineIndex + 1 - buffer.readerIndex
+            guard var line = buffer.readSlice(length: lineLength) else { return }
+
+            if let text = line.getString(at: line.readerIndex, length: line.readableBytes),
+               text.hasPrefix(Self.legacyPrefix) {
+                let rewritten = Self.rewrittenPrefix + text.dropFirst(Self.legacyPrefix.count)
+                var replacement = context.channel.allocator.buffer(capacity: rewritten.utf8.count)
+                replacement.writeString(rewritten)
+                line = replacement
+            }
+
+            bannerHandled = true
+            context.fireChannelRead(wrapInboundOut(line))
         }
+
+        forwardRemainder(context: context)
+    }
+
+    /// Forwards whatever followed the banner in the same read, if anything.
+    private func forwardRemainder(context: ChannelHandlerContext) {
+        guard buffer.readableBytes > 0 else { return }
+        let remainder = buffer
+        buffer = ByteBuffer()
+        context.fireChannelRead(wrapInboundOut(remainder))
     }
 }

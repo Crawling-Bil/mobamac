@@ -93,6 +93,13 @@ final class SSHConnectionSession: ConnectionSession {
             .connectTimeout(settings.connectTimeout)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
+            // Reading starts only once Citadel's handlers are in the
+            // pipeline -- SSH199CompatibilityHandler turns autoRead back on
+            // the moment NIOSSHHandler announces itself with its first
+            // flush. Until then the server's banner stays in the kernel
+            // buffer, which keeps it from being delivered into a pipeline
+            // that has nothing downstream to receive it yet.
+            .channelOption(ChannelOptions.autoRead, value: false)
             .channelInitializer { channel in
                 channel.pipeline.addHandler(SSH199CompatibilityHandler())
             }
