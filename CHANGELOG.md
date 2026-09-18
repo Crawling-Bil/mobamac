@@ -3,6 +3,26 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `package-mobamac-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.8
+
+Makes it possible to create a folder again.
+
+The sidebar's "Add" menu (New Session, New Folder, Manage Folders) was a
+toolbar item with no placement, so macOS left it competing with the
+detail pane's nine-item toolbar group and pushed it into the toolbar's
+overflow menu on anything but a very wide window. The only other way to
+reach "New Folder" was the context menu on an existing Customer folder,
+which is no help on a fresh install where the only folder is Ungrouped.
+
+That menu is now pinned to the leading end of the toolbar next to the
+sidebar toggle, and the same menu also sits at the bottom of the
+sidebar, where window width can't hide it.
+
+Also merged the sidebar's two sheets into one. Two `.sheet(isPresented:)`
+modifiers stacked on the same view is a known way to have one of them
+quietly never present, which would have looked like "New Folder does
+nothing" as soon as the menu became reachable.
+
 ## 1.7
 
 Fixes SSH connections, which 1.4 through 1.6 broke for every device.

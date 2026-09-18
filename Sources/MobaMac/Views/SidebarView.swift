@@ -56,9 +56,26 @@ struct SidebarView: View {
     @State private var pendingProfile: SessionProfile?
     @State private var profileToDelete: SessionProfile?
     @State private var searchText = ""
-    @State private var showingNewFolder = false
-    @State private var newFolderPresetCustomer: String?
-    @State private var showingManageFolders = false
+    /// One piece of state for both sidebar sheets, rather than a
+    /// `@State` flag and a `.sheet(isPresented:)` per sheet. Stacking two
+    /// `.sheet` modifiers on the same view is a long-standing way to end up
+    /// with one of them silently never presenting, and "New Folder does
+    /// nothing" is exactly that symptom.
+    @State private var activeSheet: SidebarSheet?
+
+    private enum SidebarSheet: Identifiable {
+        case newFolder(presetCustomer: String?)
+        case manageFolders
+
+        var id: String {
+            switch self {
+            case .newFolder(let preset):
+                return "newFolder:\(preset ?? "")"
+            case .manageFolders:
+                return "manageFolders"
+            }
+        }
+    }
     @State private var groupPendingDelete: SessionGroup?
     /// Which Customer/Device-Type folders are expanded. Manual instead of
     /// `DisclosureGroup`'s built-in toggle because putting the "…" actions
@@ -114,14 +131,17 @@ struct SidebarView: View {
                 groupedSessionsSection
             }
         }
+        .safeAreaInset(edge: .bottom) { sidebarFooter }
         .searchable(text: $searchText, prompt: "Search sessions")
         .help("Search saved sessions by name or host.")
         .toolbar { toolbarContent }
-        .sheet(isPresented: $showingNewFolder) {
-            NewFolderSheet(presetCustomer: newFolderPresetCustomer)
-        }
-        .sheet(isPresented: $showingManageFolders) {
-            ManageFoldersView()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .newFolder(let presetCustomer):
+                NewFolderSheet(presetCustomer: presetCustomer)
+            case .manageFolders:
+                ManageFoldersView()
+            }
         }
         .navigationTitle("MobaMac")
         .confirmationDialog(
@@ -241,31 +261,63 @@ struct SidebarView: View {
     /// Toolbar's "+" menu, also split out of `body` rather than inlined in
     /// `.toolbar { }` — same type-checker reasoning as the sections above.
     @ToolbarContentBuilder
+    /// `.navigation` puts this at the leading end of the toolbar, next to
+    /// the sidebar toggle, instead of leaving it to compete for space with
+    /// the detail pane's nine-item toolbar group. Without that, macOS
+    /// pushed it into the toolbar's overflow menu on anything but a very
+    /// wide window, which made "New Folder" effectively unreachable: the
+    /// only other way into it was the context menu on a Customer folder,
+    /// which needs a Customer folder to already exist.
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem {
+        ToolbarItem(placement: .navigation) {
             Menu {
-                Button {
-                    showingNewSession = true
-                } label: {
-                    Label("New Session…", systemImage: "terminal")
-                }
-                Button {
-                    newFolderPresetCustomer = nil
-                    showingNewFolder = true
-                } label: {
-                    Label("New Folder…", systemImage: "folder.badge.plus")
-                }
-                Divider()
-                Button {
-                    showingManageFolders = true
-                } label: {
-                    Label("Manage Folders…", systemImage: "folder.badge.gearshape")
-                }
+                addMenuItems
             } label: {
                 Label("Add", systemImage: "plus")
             }
             .help("Save a new session profile, create a folder to organize into ahead of time, or manage existing folders.")
         }
+    }
+
+    @ViewBuilder
+    private var addMenuItems: some View {
+        Button {
+            showingNewSession = true
+        } label: {
+            Label("New Session…", systemImage: "terminal")
+        }
+        Button {
+            activeSheet = .newFolder(presetCustomer: nil)
+        } label: {
+            Label("New Folder…", systemImage: "folder.badge.plus")
+        }
+        Divider()
+        Button {
+            activeSheet = .manageFolders
+        } label: {
+            Label("Manage Folders…", systemImage: "folder.badge.gearshape")
+        }
+    }
+
+    /// The same menu again, parked at the bottom of the sidebar. The
+    /// toolbar copy can be squeezed out by window width; this one can't,
+    /// and a sidebar whose only folder ever is "Ungrouped" needs at least
+    /// one visible way to make a real one.
+    private var sidebarFooter: some View {
+        HStack {
+            Menu {
+                addMenuItems
+            } label: {
+                Label("Add", systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("New session, new folder, or manage folders.")
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     /// Outer tree level — one Customer folder. Pulled out of `body` on its
@@ -299,8 +351,7 @@ struct SidebarView: View {
 
             Menu {
                 Button {
-                    newFolderPresetCustomer = customer.name
-                    showingNewFolder = true
+                    activeSheet = .newFolder(presetCustomer: customer.name)
                 } label: {
                     Label("Add Device Type Folder…", systemImage: "folder.badge.plus")
                 }
