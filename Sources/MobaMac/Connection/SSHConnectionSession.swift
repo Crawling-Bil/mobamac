@@ -72,7 +72,7 @@ final class SSHConnectionSession: ConnectionSession {
             throw SessionError.agentAuthNotYetImplemented
         }
 
-        let settings = SSHClientSettings(
+        var settings = SSHClientSettings(
             host: profile.host,
             port: profile.port,
             authenticationMethod: { authMethod },
@@ -80,6 +80,15 @@ final class SSHConnectionSession: ConnectionSession {
                 HostKeyValidator(host: profile.host, port: profile.port, trustOverride: trustNewHostKey)
             )
         )
+        // Plain `SSHAlgorithms()` only offers the host key types NIOSSH
+        // bundles (ed25519, ECDSA). A lot of network gear only has an RSA
+        // host key, the Cisco switches MobaMac targets included, and against
+        // those the key exchange fails with no algorithm in common. `.all`
+        // registers Citadel's ssh-rsa host key support plus aes128-ctr and
+        // diffie-hellman-group14. It appends to the preference lists rather
+        // than replacing them, so devices that negotiated fine before still
+        // pick exactly what they picked before.
+        settings.algorithms = .all
 
         // NOTE: do not switch this to `SSHClient.connect(on: channel,)` in
         // order to slip an extra ChannelHandler in front of NIOSSHHandler
@@ -95,7 +104,11 @@ final class SSHConnectionSession: ConnectionSession {
         // don't hop either. The handshake then stalls until Citadel's 10s
         // login timeout fires. `connect(to:)` below installs the same
         // handlers from inside the bootstrap's channelInitializer, which
-        // does run on the event loop.
+        // does run on the event loop. A banner rewrite couldn't have worked
+        // anyway: the server's version string is hashed into the key
+        // exchange, so changing it breaks the host key signature. "1.99"
+        // support lives in Vendor/swift-nio-ssh instead, which accepts the
+        // banner as-is.
         let client = try await SSHClient.connect(to: settings)
         self.client = client
 

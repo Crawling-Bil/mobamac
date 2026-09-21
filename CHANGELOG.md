@@ -3,6 +3,28 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `package-mobamac-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.9
+
+Cisco IOS and Palo Alto devices that advertise SSH version 1.99 can now be
+reached. That covers the default configuration of both.
+
+Two separate things were stopping them, and the second was hidden behind
+the first:
+
+1. swift-nio-ssh rejects a "1.99" version banner outright, although RFC
+   4253 says an SSH-2 client must treat it as "2.0". MobaMac now builds
+   against a vendored copy of the exact swift-nio-ssh version it was
+   already using, with that one check fixed (Vendor/swift-nio-ssh).
+2. These devices typically only have an RSA host key, and MobaMac was only
+   offering the ed25519 and ECDSA host key types NIOSSH bundles, so the key
+   exchange would have failed next with no algorithm in common. MobaMac now
+   also offers Citadel's ssh-rsa host key support, plus aes128-ctr and
+   diffie-hellman-group14. These are appended to the lists, so devices that
+   already worked negotiate exactly what they did before.
+
+Also: pressing Try Again on a tab that never connected no longer relabels
+its error as "Disconnected".
+
 ## 1.8
 
 Makes it possible to create a folder again.

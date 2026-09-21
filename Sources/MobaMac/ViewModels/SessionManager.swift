@@ -497,6 +497,10 @@ final class SessionManager: ObservableObject {
     /// appending to the previous attempt's log.
     @MainActor
     private func attemptReconnect(_ session: OpenSession) async {
+        // "Try Again" on a tab that never connected goes through here too.
+        // Keep that labelled as a failed connection rather than flipping it
+        // to "Disconnected", which would claim it had been up at some point.
+        let wasDisconnection = session.connectionIssue?.isDisconnection ?? true
         session.connectionIssue = nil
         connectionStates[session.profile.id] = .connecting
 
@@ -562,7 +566,7 @@ final class SessionManager: ObservableObject {
             session.reconnectAttempt = 0
             markConnected(profile)
         } catch {
-            session.connectionIssue = Self.issue(from: error, isDisconnection: true)
+            session.connectionIssue = Self.issue(from: error, isDisconnection: wasDisconnection)
             connectionStates[profile.id] = .failed
         }
     }

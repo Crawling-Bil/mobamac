@@ -13,7 +13,13 @@ let package = Package(
         .package(url: "https://github.com/orlandos-nl/Citadel.git", .upToNextMajor(from: "0.7.0")),
         // Serial port access for the Console/Serial session type — IOKit-backed,
         // the standard choice for Swift/macOS serial per the PRD's own notes.
-        .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0")
+        .package(url: "https://github.com/armadsen/ORSSerialPort.git", from: "2.1.0"),
+        // Local, patched copy of the swift-nio-ssh fork Citadel uses. Same
+        // package identity as Citadel's remote dependency, so this copy
+        // replaces it throughout the graph. It accepts "SSH-1.99" version
+        // banners (Cisco IOS, PAN-OS default), which upstream rejects. See
+        // Vendor/swift-nio-ssh/VENDORED.md.
+        .package(path: "Vendor/swift-nio-ssh")
     ],
     targets: [
         // Shim exposing Apple's CommonCrypto (DES/3DES) to Swift -- needed
@@ -27,6 +33,7 @@ let package = Package(
                 "SwiftTerm",
                 "Citadel",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
+                .product(name: "NIOSSH", package: "swift-nio-ssh"),
                 "CCommonCrypto"
             ],
             path: "Sources/MobaMac",
