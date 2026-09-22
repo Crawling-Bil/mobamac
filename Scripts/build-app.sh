@@ -9,10 +9,16 @@
 # here.
 #
 # Usage (from anywhere):
-#   Scripts/build-app.sh
+#   Scripts/build-app.sh             build, install, and launch
+#   Scripts/build-app.sh --no-open   build and install only (release.sh uses this)
 
 set -e
 cd "$(dirname "$0")/.."
+
+OPEN_AFTER_INSTALL=1
+if [ "$1" = "--no-open" ]; then
+    OPEN_AFTER_INSTALL=0
+fi
 
 APP_NAME="MobaMac"
 BUNDLE_ID="com.aldi.mobamac"
@@ -78,11 +84,29 @@ codesign --force --deep --sign - "$BUNDLE_DIR"
 
 echo "Quitting any running instance..."
 osascript -e "quit app \"$APP_NAME\"" 2>/dev/null || true
+# "quit" only asks. Wait for the process to actually be gone before
+# replacing the bundle and launching it again: launching while the old
+# instance is still shutting down is what makes `open` fail with
+# LaunchServices error -609.
+for _ in $(seq 1 20); do
+    pgrep -x "$APP_NAME" >/dev/null || break
+    sleep 0.25
+done
+if pgrep -x "$APP_NAME" >/dev/null; then
+    echo "$APP_NAME is still running (a copy started from Terminal doesn't always obey quit). Close it, then run this again."
+    exit 1
+fi
 
 echo "Installing to $DEST..."
 rm -rf "$DEST"
 cp -R "$BUNDLE_DIR" "$DEST"
 rm -rf "$WORKDIR"
 
-echo "Done. Opening..."
-open "$DEST"
+if [ "$OPEN_AFTER_INSTALL" = "1" ]; then
+    echo "Done. Opening..."
+    # Launching is a convenience, not part of the build: if LaunchServices
+    # refuses, the app is still installed and fine.
+    open "$DEST" || echo "Installed to $DEST, but it couldn't be launched automatically. Open it from Applications."
+else
+    echo "Done. Installed to $DEST."
+fi

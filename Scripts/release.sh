@@ -59,7 +59,7 @@ if [ "$1" = "notes" ]; then
 fi
 
 echo "== Building MobaMac $SHORT_VERSION =="
-Scripts/build-app.sh
+Scripts/build-app.sh --no-open
 
 echo "== Zipping /Applications/MobaMac.app -> $ZIP_NAME =="
 rm -f "$ZIP_NAME"
