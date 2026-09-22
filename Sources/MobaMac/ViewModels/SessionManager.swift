@@ -4,6 +4,7 @@ import SwiftTerm
 import AppKit
 import NIO
 import NIOSSH
+import Citadel
 
 enum OpenSessionKind {
     case ssh(SSHConnectionSession)
@@ -85,6 +86,14 @@ final class OpenSession: ObservableObject, Identifiable {
     /// does the actual `apply(theme:)` call) and ContentView persists it back
     /// to the saved profile so the next tab opened from it starts the same way.
     @Published var themeID: String
+
+    /// The secret this tab was opened with, when the caller supplied one
+    /// directly (Quick Connect's password field, or a saved profile's
+    /// Keychain entry read at open time). Reconnect and Try Again reuse it,
+    /// so a tab can always retry with the credentials it just used, even
+    /// when they were never written to the Keychain. Memory only, gone
+    /// when the tab closes.
+    var sessionSecret: String?
 
     init(profile: SessionProfile, kind: OpenSessionKind, logger: SessionLogger) {
         self.profile = profile
@@ -259,6 +268,7 @@ final class SessionManager: ObservableObject {
         // snapshot from whichever credential set happened to apply at
         // connect time.
         let opened = OpenSession(profile: profile, kind: .ssh(ssh), logger: logger)
+        opened.sessionSecret = secret
 
         ssh.onClose = { [weak self, weak opened] error in
             guard let self, let opened else { return }
@@ -274,7 +284,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh.start()
-                self.markConnected(profile)
+                self.markConnected(profile, provenSecret: secret)
             } catch {
                 if Self.isSSH1OnlyError(error) {
                     self.fallBackToSSH1(opened, originalProfile: profile, resolvedProfile: resolvedProfile, secret: resolvedSecret)
@@ -339,7 +349,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh1.start()
-                self.markConnected(originalProfile)
+                self.markConnected(originalProfile, provenSecret: opened.sessionSecret)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
                 self.connectionStates[originalProfile.id] = .failed
@@ -510,7 +520,7 @@ final class SessionManager: ObservableObject {
         do {
             switch session.kind {
             case .ssh:
-                let fallbackSecret = profileStore?.secret(for: profile)
+                let fallbackSecret = session.sessionSecret ?? profileStore?.secret(for: profile)
                 let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
                 let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
                 ssh.onClose = { [weak self, weak session] error in
@@ -523,7 +533,7 @@ final class SessionManager: ObservableObject {
                 session.logger = newLogger
                 try await ssh.start()
             case .ssh1:
-                let fallbackSecret = profileStore?.secret(for: profile)
+                let fallbackSecret = session.sessionSecret ?? profileStore?.secret(for: profile)
                 let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
                 let ssh1 = SSH1ConnectionSession(host: resolvedProfile.host, port: resolvedProfile.port, username: resolvedProfile.username, password: resolvedSecret)
                 ssh1.onClose = { [weak self, weak session] error in
@@ -564,7 +574,7 @@ final class SessionManager: ObservableObject {
                 return // nothing to reconnect — Local Terminal has no ConnectionSession
             }
             session.reconnectAttempt = 0
-            markConnected(profile)
+            markConnected(profile, provenSecret: session.sessionSecret)
         } catch {
             session.connectionIssue = Self.issue(from: error, isDisconnection: wasDisconnection)
             connectionStates[profile.id] = .failed
@@ -604,12 +614,29 @@ final class SessionManager: ObservableObject {
     /// call for a profile that was never saved (e.g. Quick Connect) — `upsert`
     /// just adds it.
     @MainActor
-    private func markConnected(_ profile: SessionProfile) {
+    /// `provenSecret` is the password that just authenticated successfully.
+    /// Stamping `lastConnectedAt` saves the profile, which is what puts a
+    /// Quick Connect session into the sidebar's Recent list. Saving it
+    /// without its password left an entry that could only ever send an
+    /// empty password: Recent, the command palette and reconnect all read
+    /// the password from the Keychain, found nothing, and failed with
+    /// `allAuthenticationOptionsFailed`. So a password that has just been
+    /// proven to work is stored with the profile, in the Keychain like any
+    /// saved session's. Never for a profile that takes its login from a
+    /// credential set: that secret belongs to the set, not the profile.
+    private func markConnected(_ profile: SessionProfile, provenSecret: String? = nil) {
         connectionStates[profile.id] = .connected
         guard let profileStore else { return }
         var updated = profile
         updated.lastConnectedAt = Date()
-        profileStore.upsert(updated, secret: nil)
+        let secretToStore: String?
+        if profile.kind == .ssh, profile.authMethod == .password, profile.credentialSetID == nil,
+           let provenSecret, !provenSecret.isEmpty {
+            secretToStore = provenSecret
+        } else {
+            secretToStore = nil
+        }
+        profileStore.upsert(updated, secret: secretToStore)
     }
 
     /// Plain-language text for the NIO channel errors that actually reach
@@ -659,6 +686,8 @@ final class SessionManager: ObservableObject {
             message = "The connection closed before the SSH handshake even started, and no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac. If that fails the same way, it confirms this isn't an app issue."
         } else if let channelError = error as? ChannelError {
             message = Self.describe(channelError)
+        } else if case SSHClientError.allAuthenticationOptionsFailed = error {
+            message = "The device rejected the login. Check the username and password. If this session was opened from Recent and was first created through Quick Connect in MobaMac 1.8 or earlier, it was saved without its password: connect to it once more through Quick Connect, or edit the session and enter the password."
         } else {
             // NSError bridging turns a plain Swift error into "The operation
             // couldn't be completed. (SomeModule.SomeError error 3.)" -- that

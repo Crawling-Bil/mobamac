@@ -3,6 +3,33 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `package-mobamac-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.10
+
+Fixes reconnecting, and connecting from the Recent list, for sessions
+opened through Quick Connect. Both failed with
+`allAuthenticationOptionsFailed` even though the first connection worked.
+
+Quick Connect keeps the password in memory only. But a successful
+connection saves the session so it shows up under Recent, and that save
+was done without the password. Reconnect, Recent and the command palette
+all look the password up in the Keychain, found nothing, and sent an
+empty one.
+
+Now:
+
+- A tab remembers the password it was opened with, so Reconnect and Try
+  Again always retry with the same credentials, whether or not they were
+  ever saved.
+- When a password connection succeeds and the session gets saved, the
+  password that just worked is saved with it, in the Keychain like any
+  other saved session's. Sessions that take their login from a credential
+  set are left alone.
+- A rejected login now says so in plain words.
+
+Sessions that went into Recent from Quick Connect in 1.9 or earlier are
+still missing their password. Connect to them once through Quick Connect
+again, or edit the session and enter the password.
+
 ## 1.9
 
 Cisco IOS and Palo Alto devices that advertise SSH version 1.99 can now be
