@@ -305,15 +305,13 @@ extension NIOSSHError {
         case .weakSharedSecret:
             return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group, which is common on older routers, switches and firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
         case .keyExchangeNegotiationFailure:
-            return "Couldn't agree on an SSH key-exchange algorithm with this device. It likely only offers older algorithms (e.g. diffie-hellman-group1-sha1) that this app won't use for security reasons. This is common with older network gear; check whether a newer algorithm can be enabled on the device."
+            return "This device and MobaMac have no SSH algorithm in common. Either side can be the cause: very old gear may only offer algorithms this app refuses (such as diffie-hellman-group1-sha1), while hardened gear may offer only RSA host keys signed with rsa-sha2-256/512, which MobaMac can't verify yet (it supports RSA host keys only as ssh-rsa). \"ssh -vv <user>@<host>\" from Terminal prints the device's offered lists under \"peer server KEXINIT proposal\"."
         case .unsupportedVersion:
             if self.description.contains("SSH-1.99") {
-                // RFC 4253 5: "1.99" means the server speaks SSH-2 and is
-                // only keeping the 1.x label so SSH-1 clients still
-                // connect. swift-nio-ssh rejects the banner anyway, so say
-                // what's actually happening instead of blaming the device
-                // for being old, and give the one-line device-side fix.
-                return "This device reports SSH version 1.99, which means it does speak SSH-2 and is only advertising 1.99 so that old SSH-1 clients can still connect. The SSH library this app is built on refuses that banner instead of treating it as SSH-2.0. The fix is on the device: \"ip ssh version 2\" on Cisco IOS, or the equivalent setting on other gear, makes it advertise SSH-2.0 and connect normally."
+                // Unreachable in a normal build: Vendor/swift-nio-ssh accepts
+                // "1.99". Seeing this means the app was built against the
+                // unpatched remote library instead, so say exactly that.
+                return "This device reports SSH version 1.99 (SSH-2 with SSH-1 compatibility). MobaMac is meant to accept that, but this copy of the app was built without its patched SSH library (Vendor/swift-nio-ssh), so it was rejected. Rebuild from the full repository, or set \"ip ssh version 2\" on the device as a workaround."
             }
             return "This device's SSH version isn't supported (this app requires SSH-2.0). Very old gear that only speaks SSH-1 can't be used here."
         case .invalidHostKeyForKeyExchange, .invalidExchangeHashSignature:
