@@ -36,6 +36,9 @@ final class SSH1ConnectionSession: ConnectionSession {
     private let port: UInt16
     private let username: String
     private let password: String?
+    /// Accept a host key that differs from the remembered one, replacing it.
+    /// Only set when the user explicitly chose "Trust New Key & Reconnect".
+    private let trustNewHostKey: Bool
 
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "MobaMac.SSH1")
@@ -45,11 +48,12 @@ final class SSH1ConnectionSession: ConnectionSession {
     private var incomingCipher: SSH1Cipher?
     private var readLoopTask: Task<Void, Never>?
 
-    init(host: String, port: Int, username: String, password: String?) {
+    init(host: String, port: Int, username: String, password: String?, trustNewHostKey: Bool = false) {
         self.host = host
         self.port = UInt16(clamping: max(0, port))
         self.username = username
         self.password = password
+        self.trustNewHostKey = trustNewHostKey
     }
 
     enum SSH1Error: LocalizedError {
@@ -114,6 +118,7 @@ final class SSH1ConnectionSession: ConnectionSession {
             throw SSH1Error.protocolError("Expected SSH_SMSG_PUBLIC_KEY (2), got message type \(publicKeyMsgType).")
         }
         let info = try Self.parsePublicKeyPacket(publicKeyPayload)
+        try verifyHostKey(info.hostKey)
 
         let sessionID = Self.computeSessionID(
             hostModulus: info.hostKey.modulus,
@@ -200,6 +205,43 @@ final class SSH1ConnectionSession: ConnectionSession {
     func close() async {
         readLoopTask?.cancel()
         connection?.cancel()
+    }
+
+    // MARK: - Host key verification
+
+    /// Trust-on-first-use against `KnownHostsStore`, the same policy as the
+    /// SSH-2 path: the first key seen for host:port is remembered, and a
+    /// different key later stops the connection before any credentials are
+    /// sent, with the same "Host key changed" error and "Trust New Key &
+    /// Reconnect" recovery.
+    ///
+    /// Only the long-lived host key is checked. SSH-1's server key is
+    /// ephemeral by design (regenerated about hourly) and says nothing
+    /// about the device's identity. The host key is fingerprinted as
+    /// string(e) + string(n), and stored under a separate SSH-1 entry so
+    /// it never collides with the device's SSH-2 key.
+    private func verifyHostKey(_ key: SSH1RSAKey) throws {
+        let rawKey = Data(Self.encodeString(key.exponent) + Self.encodeString(key.modulus))
+        let hostName = host
+        let hostPort = Int(port)
+        let store = KnownHostsStore.shared
+
+        switch store.evaluate(host: hostName, port: hostPort, rawKeyBytes: rawKey, protocolTag: "ssh1") {
+        case .newHost:
+            store.trust(host: hostName, port: hostPort, rawKeyBytes: rawKey, protocolTag: "ssh1")
+        case .matches:
+            break
+        case .mismatch(let previousFingerprint):
+            if trustNewHostKey {
+                store.trust(host: hostName, port: hostPort, rawKeyBytes: rawKey, protocolTag: "ssh1")
+            } else {
+                connection?.cancel()
+                throw SSHConnectionSession.SessionError.hostKeyMismatch(
+                    previousFingerprint: previousFingerprint,
+                    newFingerprint: store.fingerprint(of: rawKey)
+                )
+            }
+        }
     }
 
     // MARK: - Post-handshake read loop

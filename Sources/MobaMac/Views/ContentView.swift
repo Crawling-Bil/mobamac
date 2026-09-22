@@ -288,6 +288,8 @@ private struct HighlightToggleButton: View {
 private struct SessionTabView: View {
     @ObservedObject var session: OpenSession
     @EnvironmentObject var sessionManager: SessionManager
+    @State private var promptPassword = ""
+    @State private var promptSavePassword = false
 
     var body: some View {
         Group {
@@ -319,12 +321,39 @@ private struct SessionTabView: View {
         }
     }
 
+    private func issueTitle(_ issue: SSHConnectionIssue) -> String {
+        if issue.needsPassword { return "Password required" }
+        if issue.isHostKeyMismatch { return "Host key changed" }
+        if issue.isSessionEnded { return "Session ended" }
+        return issue.isDisconnection ? "Disconnected" : "Connection failed"
+    }
+
+    private func issueSymbol(_ issue: SSHConnectionIssue) -> String {
+        if issue.needsPassword { return "key.fill" }
+        if issue.isHostKeyMismatch { return "exclamationmark.triangle.fill" }
+        if issue.isSessionEnded { return "checkmark.circle" }
+        return "xmark.octagon"
+    }
+
+    private func issueColor(_ issue: SSHConnectionIssue) -> Color {
+        if issue.isHostKeyMismatch { return .yellow }
+        if issue.needsPassword || issue.isSessionEnded { return .secondary }
+        return .red
+    }
+
+    private func submitPassword() {
+        guard !promptPassword.isEmpty else { return }
+        let password = promptPassword
+        promptPassword = ""
+        sessionManager.submitPassword(password, for: session, save: promptSavePassword)
+    }
+
     private func connectionIssueView(_ issue: SSHConnectionIssue) -> some View {
         VStack(spacing: 12) {
-            Image(systemName: issue.isHostKeyMismatch ? "exclamationmark.triangle.fill" : "xmark.octagon")
+            Image(systemName: issueSymbol(issue))
                 .font(.system(size: 36))
-                .foregroundStyle(issue.isHostKeyMismatch ? .yellow : .red)
-            Text(issue.isHostKeyMismatch ? "Host key changed" : (issue.isDisconnection ? "Disconnected" : "Connection failed"))
+                .foregroundStyle(issueColor(issue))
+            Text(issueTitle(issue))
                 .font(.headline)
             Text(issue.message)
                 .font(.subheadline)
@@ -336,13 +365,25 @@ private struct SessionTabView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if issue.needsPassword {
+                SecureField("Password", text: $promptPassword)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 260)
+                    .onSubmit(submitPassword)
+                Toggle("Save password", isOn: $promptSavePassword)
+            }
             HStack {
-                if issue.isHostKeyMismatch {
+                if issue.needsPassword {
+                    Button("Connect", action: submitPassword)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(promptPassword.isEmpty)
+                } else if issue.isHostKeyMismatch {
                     Button("Trust New Key & Reconnect") {
                         sessionManager.retryTrustingHostKey(session)
                     }
                     .buttonStyle(.borderedProminent)
-                } else if issue.isDisconnection {
+                } else if issue.isDisconnection || issue.isSessionEnded {
                     Button("Reconnect") {
                         sessionManager.reconnect(session)
                     }

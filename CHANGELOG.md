@@ -3,6 +3,30 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.14
+
+- Typing `exit` or `logout`, or a device closing the session normally,
+  now shows "Session ended" with a Reconnect button. Before it was
+  treated as a dropped connection and, with auto-reconnect on, MobaMac
+  logged straight back in.
+- Quick Connect has a "Save password" checkbox, off by default. Without
+  it, the password is only kept for the open tab.
+- When MobaMac has no password for a session (not saved, or lost from
+  the Keychain), the tab asks for one instead of sending an empty
+  password. A rejected password asks again rather than offering a Try
+  Again that resends it, and stops auto-reconnect so a wrong password
+  isn't retried up to 20 times against the device.
+- The SSH-1 fallback now verifies the device's host key against known
+  hosts, the same trust-on-first-use check SSH-2 connections get. It
+  used to accept any key. SSH-1 keys are stored separately from a
+  device's SSH-2 key.
+- Reconnect attempts no longer leave an empty log file behind each time
+  they fail, and the previous log file is now closed instead of left
+  open.
+- A full disk no longer crashes the app while it writes a session log.
+- The known hosts list is safe to use from several connections opening
+  at the same time.
+
 ## 1.13
 
 Fixes the 1.12 keepalive guard being too strict: after some ordinary

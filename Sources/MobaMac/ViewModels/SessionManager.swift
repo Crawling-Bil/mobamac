@@ -39,6 +39,15 @@ struct SSHConnectionIssue {
     /// one of those is worse than offering a button that sometimes fails
     /// again. A host-key mismatch keeps its own distinct recovery path.
     let isDisconnection: Bool
+    /// The session ended normally: the user typed exit/logout, or the device
+    /// closed the channel without an error. Offers a manual Reconnect and is
+    /// never auto-reconnected: reconnecting straight back into a session the
+    /// user just logged out of would be surprising at best.
+    var isSessionEnded: Bool = false
+    /// MobaMac has no usable password for this password-auth session (never
+    /// saved, or the device just rejected it). The tab asks for one instead
+    /// of connecting with an empty password.
+    var needsPassword: Bool = false
 }
 
 /// One open tab: pairs a profile with its live connection (if any) and its logger.
@@ -94,6 +103,10 @@ final class OpenSession: ObservableObject, Identifiable {
     /// when they were never written to the Keychain. Memory only, gone
     /// when the tab closes.
     var sessionSecret: String?
+    /// Whether a password that authenticates successfully in this tab may be
+    /// saved to the Keychain. Off for Quick Connect and for a password typed
+    /// into the tab's prompt unless the user ticked "Save password".
+    var savesSecretOnConnect = true
 
     init(profile: SessionProfile, kind: OpenSessionKind, logger: SessionLogger) {
         self.profile = profile
@@ -254,10 +267,13 @@ final class SessionManager: ObservableObject {
         resolved.username = set.username
         resolved.authMethod = set.authMethod
         resolved.privateKeyPath = set.privateKeyPath
-        return (resolved, credentialSetStore?.secret(for: set))
+        // The set's own secret wins. If it has none (never saved, or lost
+        // from the Keychain), fall back to whatever the caller has, which
+        // is how a password typed into the tab's prompt reaches the login.
+        return (resolved, credentialSetStore?.secret(for: set) ?? fallbackSecret)
     }
 
-    func openSSH(profile: SessionProfile, secret: String?) {
+    func openSSH(profile: SessionProfile, secret: String?, saveSecret: Bool = true) {
         let logger = SessionLogger(profileName: profile.name)
         let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: secret)
         let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
@@ -269,6 +285,7 @@ final class SessionManager: ObservableObject {
         // connect time.
         let opened = OpenSession(profile: profile, kind: .ssh(ssh), logger: logger)
         opened.sessionSecret = secret
+        opened.savesSecretOnConnect = saveSecret
 
         ssh.onClose = { [weak self, weak opened] error in
             guard let self, let opened else { return }
@@ -279,14 +296,28 @@ final class SessionManager: ObservableObject {
 
         openSessions.append(opened)
         activeSessionID = opened.id
+
+        // Nothing to log in with: ask, rather than send an empty password
+        // the device will reject (what opening a Quick Connect entry from
+        // Recent used to do when its password wasn't saved).
+        if resolvedProfile.authMethod == .password, (resolvedSecret ?? "").isEmpty {
+            opened.connectionIssue = Self.passwordPrompt(for: resolvedProfile, rejected: false)
+            connectionStates[profile.id] = .idle
+            return
+        }
+
         connectionStates[profile.id] = .connecting
 
         Task { @MainActor in
             do {
                 try await ssh.start()
-                self.markConnected(profile, provenSecret: secret)
+                self.markConnected(profile, provenSecret: opened.savesSecretOnConnect ? secret : nil)
             } catch {
-                if Self.isSSH1OnlyError(error) {
+                if Self.isAuthenticationRejected(error), resolvedProfile.authMethod == .password, profile.credentialSetID == nil {
+                    opened.sessionSecret = nil
+                    opened.connectionIssue = Self.passwordPrompt(for: resolvedProfile, rejected: true)
+                    self.connectionStates[profile.id] = .failed
+                } else if Self.isSSH1OnlyError(error) {
                     self.fallBackToSSH1(opened, originalProfile: profile, resolvedProfile: resolvedProfile, secret: resolvedSecret)
                 } else {
                     opened.connectionIssue = Self.issue(from: error)
@@ -294,6 +325,29 @@ final class SessionManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Called from the tab's password prompt: remembers the password for
+    /// this tab (and, if asked, lets a successful login save it), then
+    /// connects through the normal reconnect path.
+    func submitPassword(_ password: String, for session: OpenSession, save: Bool) {
+        session.sessionSecret = password
+        session.savesSecretOnConnect = save
+        reconnect(session)
+    }
+
+    private static func passwordPrompt(for profile: SessionProfile, rejected: Bool) -> SSHConnectionIssue {
+        let who = profile.username.isEmpty ? profile.host : "\(profile.username)@\(profile.host)"
+        let message = rejected
+            ? "The device rejected the password for \(who). Enter it again."
+            : "Enter the password for \(who). MobaMac doesn't have one saved for this session."
+        return SSHConnectionIssue(message: message, isHostKeyMismatch: false, isDisconnection: false, needsPassword: true)
+    }
+
+    private static func isAuthenticationRejected(_ error: Error) -> Bool {
+        if case SSHClientError.allAuthenticationOptionsFailed = error { return true }
+        if case SSH1ConnectionSession.SSH1Error.authenticationFailed = error { return true }
+        return false
     }
 
     /// True when Citadel/swift-nio-ssh rejected the handshake specifically
@@ -349,7 +403,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh1.start()
-                self.markConnected(originalProfile, provenSecret: opened.sessionSecret)
+                self.markConnected(originalProfile, provenSecret: opened.savesSecretOnConnect ? opened.sessionSecret : nil)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
                 self.connectionStates[originalProfile.id] = .failed
@@ -427,6 +481,10 @@ final class SessionManager: ObservableObject {
     /// host-key mismatch: explicitly re-trust the new key (same as deleting
     /// the stale `known_hosts` line yourself) and reconnect.
     func retryTrustingHostKey(_ session: OpenSession) {
+        if case .ssh1 = session.kind {
+            reconnect(session, trustingNewHostKey: true)
+            return
+        }
         guard case .ssh(let ssh) = session.kind else { return }
         session.connectionIssue = nil
         connectionStates[session.profile.id] = .connecting
@@ -446,11 +504,11 @@ final class SessionManager: ObservableObject {
     /// makes one immediate attempt. If that attempt also fails and the
     /// profile has auto-reconnect on, hands off into the regular auto-reconnect
     /// loop rather than just giving up after the one manual try.
-    func reconnect(_ session: OpenSession) {
+    func reconnect(_ session: OpenSession, trustingNewHostKey: Bool = false) {
         reconnectTasks[session.id]?.cancel()
         reconnectTasks[session.id] = Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.attemptReconnect(session)
+            await self.attemptReconnect(session, trustingNewHostKey: trustingNewHostKey)
             if session.connectionIssue != nil, session.profile.autoReconnect == true {
                 self.startAutoReconnect(session)
             }
@@ -467,6 +525,19 @@ final class SessionManager: ObservableObject {
     @MainActor
     private func handleUnexpectedClose(_ session: OpenSession, error: Error?) {
         guard openSessions.contains(where: { $0.id == session.id }) else { return }
+        guard let error else {
+            // No error means an orderly end: the user typed exit/logout, or
+            // the device closed the channel normally. Not a failure, and
+            // never auto-reconnected.
+            session.connectionIssue = SSHConnectionIssue(
+                message: "The session was closed normally, for example by logging out.",
+                isHostKeyMismatch: false,
+                isDisconnection: false,
+                isSessionEnded: true
+            )
+            connectionStates[session.profile.id] = .idle
+            return
+        }
         session.connectionIssue = Self.issue(from: error, isDisconnection: true)
         connectionStates[session.profile.id] = .failed
         if session.profile.autoReconnect == true {
@@ -488,12 +559,19 @@ final class SessionManager: ObservableObject {
                 if Task.isCancelled { return }
                 guard self.openSessions.contains(where: { $0.id == session.id }) else { return }
                 guard session.connectionIssue != nil else { return } // already reconnected
+                // A rejected or missing password needs the user, not a retry.
+                // Resending the same rejected password up to 20 times can
+                // lock the account on the device.
+                guard session.connectionIssue?.needsPassword != true else {
+                    session.reconnectAttempt = 0
+                    return
+                }
                 session.reconnectAttempt = attempt
                 try? await Task.sleep(nanoseconds: Self.autoReconnectDelaySeconds * 1_000_000_000)
                 if Task.isCancelled { return }
                 guard self.openSessions.contains(where: { $0.id == session.id }) else { return }
                 guard session.connectionIssue != nil else { return }
-                await self.attemptReconnect(session)
+                await self.attemptReconnect(session, trustingNewHostKey: false)
                 if session.connectionIssue == nil { return } // success
             }
             session.reconnectAttempt = 0
@@ -506,22 +584,32 @@ final class SessionManager: ObservableObject {
     /// undisturbed), and gives it a fresh timestamped log file rather than
     /// appending to the previous attempt's log.
     @MainActor
-    private func attemptReconnect(_ session: OpenSession) async {
+    private func attemptReconnect(_ session: OpenSession, trustingNewHostKey: Bool) async {
+        // Local terminals have no ConnectionSession to rebuild. Checked
+        // before anything else so no state (or log file) is touched.
+        if case .local = session.kind { return }
+
         // "Try Again" on a tab that never connected goes through here too.
         // Keep that labelled as a failed connection rather than flipping it
         // to "Disconnected", which would claim it had been up at some point.
-        let wasDisconnection = session.connectionIssue?.isDisconnection ?? true
+        // A session that ended normally was up, so a failed reconnect there
+        // counts as a disconnection.
+        let wasDisconnection = session.connectionIssue.map { $0.isDisconnection || $0.isSessionEnded } ?? true
         session.connectionIssue = nil
         connectionStates[session.profile.id] = .connecting
 
         let profile = session.profile
-        let newLogger = SessionLogger(profileName: profile.name)
 
         do {
             switch session.kind {
             case .ssh:
                 let fallbackSecret = session.sessionSecret ?? profileStore?.secret(for: profile)
                 let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
+                if resolvedProfile.authMethod == .password, (resolvedSecret ?? "").isEmpty {
+                    session.connectionIssue = Self.passwordPrompt(for: resolvedProfile, rejected: false)
+                    connectionStates[profile.id] = .idle
+                    return
+                }
                 let ssh = SSHConnectionSession(profile: resolvedProfile, secret: resolvedSecret)
                 ssh.onClose = { [weak self, weak session] error in
                     guard let self, let session else { return }
@@ -530,12 +618,16 @@ final class SessionManager: ObservableObject {
                     }
                 }
                 session.kind = .ssh(ssh)
-                session.logger = newLogger
                 try await ssh.start()
             case .ssh1:
                 let fallbackSecret = session.sessionSecret ?? profileStore?.secret(for: profile)
                 let (resolvedProfile, resolvedSecret) = resolvedSSHCredentials(for: profile, fallbackSecret: fallbackSecret)
-                let ssh1 = SSH1ConnectionSession(host: resolvedProfile.host, port: resolvedProfile.port, username: resolvedProfile.username, password: resolvedSecret)
+                if (resolvedSecret ?? "").isEmpty {
+                    session.connectionIssue = Self.passwordPrompt(for: resolvedProfile, rejected: false)
+                    connectionStates[profile.id] = .idle
+                    return
+                }
+                let ssh1 = SSH1ConnectionSession(host: resolvedProfile.host, port: resolvedProfile.port, username: resolvedProfile.username, password: resolvedSecret, trustNewHostKey: trustingNewHostKey)
                 ssh1.onClose = { [weak self, weak session] error in
                     guard let self, let session else { return }
                     Task { @MainActor in
@@ -543,7 +635,6 @@ final class SessionManager: ObservableObject {
                     }
                 }
                 session.kind = .ssh1(ssh1)
-                session.logger = newLogger
                 try await ssh1.start()
             case .telnet:
                 let telnet = TelnetConnectionSession(host: profile.host, port: profile.port)
@@ -554,7 +645,6 @@ final class SessionManager: ObservableObject {
                     }
                 }
                 session.kind = .telnet(telnet)
-                session.logger = newLogger
                 try await telnet.start()
             case .serial:
                 let serial = SerialConnectionSession(
@@ -568,15 +658,29 @@ final class SessionManager: ObservableObject {
                     }
                 }
                 session.kind = .serial(serial)
-                session.logger = newLogger
                 try await serial.start()
             case .local:
-                return // nothing to reconnect — Local Terminal has no ConnectionSession
+                return // unreachable, handled at the top
             }
+            // A fresh, timestamped log per successful connection, created
+            // only now so failed attempts (up to 20 during auto-reconnect)
+            // don't each leave an empty log file behind. The old logger is
+            // closed after the swap, so output arriving in between still
+            // lands in an open file rather than a closed one.
+            let oldLogger = session.logger
+            session.logger = SessionLogger(profileName: profile.name)
+            oldLogger.close()
             session.reconnectAttempt = 0
-            markConnected(profile, provenSecret: session.sessionSecret)
+            markConnected(profile, provenSecret: session.savesSecretOnConnect ? session.sessionSecret : nil)
         } catch {
-            session.connectionIssue = Self.issue(from: error, isDisconnection: wasDisconnection)
+            if Self.isAuthenticationRejected(error), profile.kind == .ssh, profile.authMethod == .password, profile.credentialSetID == nil {
+                // Wrong password: ask again rather than offer a Try Again
+                // that would resend the same rejected password.
+                session.sessionSecret = nil
+                session.connectionIssue = Self.passwordPrompt(for: profile, rejected: true)
+            } else {
+                session.connectionIssue = Self.issue(from: error, isDisconnection: wasDisconnection)
+            }
             connectionStates[profile.id] = .failed
         }
     }

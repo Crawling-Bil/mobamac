@@ -13,6 +13,9 @@ struct QuickConnectSheet: View {
     @State private var port = "22"
     @State private var username = ""
     @State private var password = ""
+    /// Off by default: Quick Connect is for one-off connections, and a
+    /// password shouldn't end up in the Keychain unless the user asks.
+    @State private var savePassword = false
 
     private var hostError: String? { HostValidator.hostErrorMessage(for: host) }
     private var portError: String? { HostValidator.portErrorMessage(for: port) }
@@ -52,6 +55,8 @@ struct QuickConnectSheet: View {
             if kind == .ssh {
                 TextField("Username", text: $username)
                 SecureField("Password", text: $password)
+                Toggle("Save password", isOn: $savePassword)
+                    .help("Store the password in the Keychain once it works, so reconnecting from Recent doesn't ask again.")
             } else {
                 Text("Telnet sends everything, passwords included, in plain text.")
                     .font(.caption)
@@ -78,7 +83,7 @@ struct QuickConnectSheet: View {
         case .ssh:
             profile.username = username
             profile.authMethod = .password
-            sessionManager.openSSH(profile: profile, secret: password.isEmpty ? nil : password)
+            sessionManager.openSSH(profile: profile, secret: password.isEmpty ? nil : password, saveSecret: savePassword)
         case .telnet:
             sessionManager.openTelnet(profile: profile)
         case .serial, .local:

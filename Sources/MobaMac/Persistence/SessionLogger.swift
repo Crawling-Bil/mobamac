@@ -61,8 +61,13 @@ final class SessionLogger {
         return "\(stamp)_\(name).log"
     }
 
+    /// `FileHandle.write(_:)` reports failure by raising an Objective-C
+    /// exception, which Swift can't catch: a full disk, or a write that
+    /// lands after `close()`, would take the whole app down. The throwing
+    /// `write(contentsOf:)` turns both into an ignorable error. Losing a
+    /// log line is better than losing every open session.
     func write(_ data: Data) {
-        fileHandle?.write(data)
+        try? fileHandle?.write(contentsOf: data)
     }
 
     func close() {

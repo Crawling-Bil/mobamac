@@ -21,7 +21,14 @@ final class KnownHostsStore {
     }
 
     private let fileURL: URL
-    private var entries: [String: String] // "host:port" -> fingerprint
+    /// "host:port" -> fingerprint (SSH-1 keys use "host:port/ssh1", see
+    /// `key(host:port:protocolTag:)`). Only touched while holding `lock`:
+    /// `evaluate` and `trust` run on NIO event loop threads, and several
+    /// sessions connecting at once can call them concurrently. Unguarded,
+    /// that's a data race on the dictionary, which can crash or silently
+    /// lose a trusted key.
+    private var entries: [String: String]
+    private let lock = NSLock()
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -42,19 +49,33 @@ final class KnownHostsStore {
         return "SHA256:" + Data(digest).base64EncodedString()
     }
 
-    func evaluate(host: String, port: Int, rawKeyBytes: Data) -> Verdict {
-        let key = "\(host):\(port)"
+    /// `protocolTag` keeps SSH-1 host keys apart from SSH-2 ones: a device
+    /// that speaks both has a different key for each, and sharing one entry
+    /// would report a false "host key changed" whenever MobaMac switched
+    /// protocols.
+    private static func key(host: String, port: Int, protocolTag: String?) -> String {
+        let base = "\(host):\(port)"
+        return protocolTag.map { "\(base)/\($0)" } ?? base
+    }
+
+    func evaluate(host: String, port: Int, rawKeyBytes: Data, protocolTag: String? = nil) -> Verdict {
+        let key = Self.key(host: host, port: port, protocolTag: protocolTag)
         let fp = fingerprint(of: rawKeyBytes)
-        guard let known = entries[key] else { return .newHost }
+        lock.lock()
+        let known = entries[key]
+        lock.unlock()
+        guard let known else { return .newHost }
         return known == fp ? .matches : .mismatch(previousFingerprint: known)
     }
 
-    func trust(host: String, port: Int, rawKeyBytes: Data) {
-        entries["\(host):\(port)"] = fingerprint(of: rawKeyBytes)
-        persist()
-    }
-
-    private func persist() {
+    func trust(host: String, port: Int, rawKeyBytes: Data, protocolTag: String? = nil) {
+        let key = Self.key(host: host, port: port, protocolTag: protocolTag)
+        let fp = fingerprint(of: rawKeyBytes)
+        lock.lock()
+        defer { lock.unlock() }
+        entries[key] = fp
+        // Written inside the lock so two trusts can't interleave and leave
+        // the file holding the older of the two snapshots.
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
