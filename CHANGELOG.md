@@ -3,6 +3,36 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.12
+
+Safety fix: the idle keepalive could confirm a reload.
+
+To stop a device's idle timeout from logging the session out, MobaMac
+types a newline after 30 idle seconds. Network gear confirms destructive
+commands with that same Enter. Type `reload`, get
+`Proceed with reload? [confirm]`, walk away for half a minute, and the
+keepalive pressed Enter for you. Same for `write erase`, `delete flash:`
+and any other `[confirm]` prompt.
+
+The keepalive now only goes out when all of these are true:
+
+- Nothing was sent or received for the whole interval. Output counts
+  now, so it can't land in the middle of a long `show tech`. Before,
+  only typing reset the timer.
+- Nothing is half-typed on the line. A recalled or partly typed
+  `reload` would otherwise be executed.
+- The last line on screen is an ordinary prompt ending in `#`, `>`,
+  `$`, `%`, or a single bracketed word like Huawei's `[sysname]`. Any
+  line with `[confirm]`, `[yes/no]`, `[y/n]`, `(y/n)`, `(y or n)`,
+  `--More--`, a `?`, or ending in `:` (password and `[Y/N]:` prompts)
+  gets no keepalive.
+
+Checked against prompts from Cisco IOS, Huawei VRP, FortiOS, PAN-OS,
+Junos and Linux shells, and against the confirmation prompts of reload,
+write erase, delete, copy and save on those platforms. If a device's
+prompt isn't recognised the keepalive simply doesn't fire, and the worst
+case is the device timing the session out, as it would without MobaMac.
+
 ## 1.11
 
 Tidier repository and log files. No change to how connections work.

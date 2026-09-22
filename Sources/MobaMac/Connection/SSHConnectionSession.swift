@@ -27,18 +27,18 @@ final class SSHConnectionSession: ConnectionSession {
     /// it after the closure that created it has returned control to us.
     private var stdinWriter: TTYStdinWriter?
 
-    /// UI spec §9.1 — network gear's idle `exec-timeout` (commonly 5–10
+    /// UI spec §9.1: network gear's idle `exec-timeout` (commonly 5 to 10
     /// minutes) drops a session that's just sitting there while someone
-    /// reads a doc. `lastActivityAt` tracks the last real keystroke sent
-    /// down this channel; `keepaliveTask` watches it and, once it's been
-    /// idle for the configured interval, sends a single newline to keep the
-    /// device from timing us out. Confirmed there's no clean Citadel-level
-    /// SSH global-request keepalive hook exposed by the resolved package
-    /// version, so this is the spec's explicit application-level fallback
-    /// instead — crude, but it works against every vendor's CLI and is
-    /// harmless at a shell prompt (worst case: an extra blank prompt line).
+    /// reads a doc. After the configured idle interval `keepaliveTask`
+    /// types a single newline. It has to be real input: exec-timeout
+    /// counts EXEC input, so an SSH-level keepalive would not reset it.
+    ///
+    /// A newline is also exactly how a device confirms "reload" or
+    /// "write erase", so `keepaliveGuard` decides whether it's safe:
+    /// idle in both directions, nothing half-typed, and an ordinary prompt
+    /// on screen. See KeepaliveGuard.
     private var keepaliveTask: Task<Void, Never>?
-    private var lastActivityAt = Date()
+    private let keepaliveGuard = KeepaliveGuard()
 
     init(profile: SessionProfile, secret: String?) {
         self.profile = profile
@@ -127,12 +127,13 @@ final class SSHConnectionSession: ConnectionSession {
             do {
                 try await client.withPTY(request) { ttyOutput, ttyStdinWriter in
                     self.stdinWriter = ttyStdinWriter
-                    self.lastActivityAt = Date()
                     self.startKeepaliveIfNeeded()
                     for try await chunk in ttyOutput {
                         switch chunk {
                         case .stdout(let buffer), .stderr(let buffer):
-                            self.onOutput?(Data(buffer: buffer))
+                            let data = Data(buffer: buffer)
+                            self.keepaliveGuard.recordOutput(data)
+                            self.onOutput?(data)
                         }
                     }
                 }
@@ -197,7 +198,7 @@ final class SSHConnectionSession: ConnectionSession {
     }
 
     func send(_ data: Data) async {
-        lastActivityAt = Date()
+        keepaliveGuard.recordInput(data)
         guard let stdinWriter else { return }
         var buffer = ByteBufferAllocator().buffer(capacity: data.count)
         buffer.writeBytes(data)
@@ -226,26 +227,22 @@ final class SSHConnectionSession: ConnectionSession {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self, !Task.isCancelled else { return }
-                let idleSeconds = Date().timeIntervalSince(self.lastActivityAt)
-                if idleSeconds >= Double(interval) {
+                if self.keepaliveGuard.shouldSendKeepalive(idleThreshold: Double(interval)) {
                     await self.sendKeepaliveNewline()
                 }
             }
         }
     }
 
-    /// The actual keepalive "ping": a bare newline on the PTY's stdin. Not
-    /// pretty — it prints an extra blank prompt on the device's own screen
-    /// — but it's indistinguishable from real activity to whatever
-    /// `exec-timeout`-style idle clock the device is running, and it works
-    /// identically on every vendor's CLI since it's just a keystroke, not a
-    /// protocol-level SSH feature the device has to specifically support.
+    /// The keepalive itself: a bare newline on the PTY's stdin, which prints
+    /// one extra prompt line on the device. Only ever called after
+    /// `keepaliveGuard.shouldSendKeepalive` said yes.
     private func sendKeepaliveNewline() async {
         guard let stdinWriter else { return }
         var buffer = ByteBufferAllocator().buffer(capacity: 1)
         buffer.writeString("\n")
         try? await stdinWriter.write(buffer)
-        lastActivityAt = Date()
+        keepaliveGuard.recordKeepaliveSent()
     }
 
     /// Opens a second, independent SFTP session on the same underlying SSH
