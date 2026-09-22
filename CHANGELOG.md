@@ -3,6 +3,28 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.13
+
+Fixes the 1.12 keepalive guard being too strict: after some ordinary
+actions the keepalive stopped for good until the next Enter.
+
+1.12 treated every key other than Enter, Ctrl-C and Ctrl-U as "something
+typed and not submitted". Two everyday cases broke that:
+
+- Typing something and erasing it with Backspace still counted as typed.
+- Single-key answers that are never followed by Enter, like `n` at a
+  `[confirm]` prompt or Space at `--More--`, counted as typed forever.
+
+Now Backspace counts back down, and the count resets whenever the device
+starts a new line, which is what happens after it accepts a single-key
+answer. The screen check is unchanged and still refuses anything that
+isn't a plain prompt, including a half-typed command redrawn after a log
+message.
+
+For troubleshooting, starting the app from Terminal with
+`MOBAMAC_DEBUG_KEEPALIVE=1` prints why each keepalive was sent or held
+back.
+
 ## 1.12
 
 Safety fix: the idle keepalive could confirm a reload.

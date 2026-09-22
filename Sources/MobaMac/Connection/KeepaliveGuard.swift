@@ -26,7 +26,17 @@ final class KeepaliveGuard {
     private var lastInputAt: Date
     private var lastOutputAt: Date
     private var outputTail: [Unicode.Scalar] = []
-    private var hasUnsubmittedInput = false
+    /// Characters typed on the current line and not yet submitted.
+    private var typedCount = 0
+    /// Set by input whose effect on the line can't be counted: arrow keys
+    /// (history recall), Tab (completion), Ctrl-W and other editing keys.
+    /// Only Enter, Ctrl-C or Ctrl-U clear it.
+    private var lineUncertain = false
+
+    /// `MOBAMAC_DEBUG_KEEPALIVE=1` prints every keepalive decision to
+    /// stderr, so the reason it did or didn't fire can be seen by starting
+    /// the app from Terminal.
+    private let debug = ProcessInfo.processInfo.environment["MOBAMAC_DEBUG_KEEPALIVE"] == "1"
 
     /// Enough to hold the last line even behind a burst of escape codes.
     private static let tailLimit = 2048
@@ -41,25 +51,45 @@ final class KeepaliveGuard {
         lock.lock()
         defer { lock.unlock() }
         lastOutputAt = now
+        // The device starting a new line means whatever was on the old one
+        // has been dealt with: submitted, or answered by a single key that
+        // is never followed by Enter ("n" at [confirm], Space at --More--).
+        // Without this reset those keys would count as typed-but-unsubmitted
+        // forever and keepalives would stop until the next Enter. Anything
+        // still genuinely pending is caught by the prompt check, since a
+        // redrawn "sw#abc" doesn't end in a prompt character.
+        if scalars.contains(where: { $0.value == 0x0A }) {
+            typedCount = 0
+            lineUncertain = false
+        }
         outputTail.append(contentsOf: scalars)
         if outputTail.count > Self.tailLimit {
             outputTail.removeFirst(outputTail.count - Self.tailLimit)
         }
     }
 
-    /// Anything the user types or pastes. Enter, Ctrl-C and Ctrl-U leave an
-    /// empty line; every other byte (letters, Tab completion, arrow keys
-    /// recalling history) may leave a command sitting on it.
+    /// Tracks whether the user has something typed and not yet submitted,
+    /// since Enter would run it. Printable characters count up, Backspace
+    /// and Delete count down (so typing "abc" and erasing it leaves an empty
+    /// line again), Enter, Ctrl-C and Ctrl-U reset. Anything whose effect
+    /// can't be counted, like an arrow key recalling history or Tab
+    /// completing a word, marks the line uncertain until the next reset.
     func recordInput(_ data: Data, now: Date = Date()) {
         lock.lock()
         defer { lock.unlock() }
         lastInputAt = now
-        for byte in data {
-            switch byte {
+        for scalar in String(decoding: data, as: UTF8.self).unicodeScalars {
+            switch scalar.value {
             case 0x0D, 0x0A, 0x03, 0x15:
-                hasUnsubmittedInput = false
+                typedCount = 0
+                lineUncertain = false
+            case 0x08, 0x7F:
+                typedCount = max(0, typedCount - 1)
+            case 0x20...0x7E, 0xA0...:
+                typedCount += 1
             default:
-                hasUnsubmittedInput = true
+                // ESC (arrow keys and other sequences), Tab, Ctrl-W, ...
+                lineUncertain = true
             }
         }
     }
@@ -73,13 +103,30 @@ final class KeepaliveGuard {
     func shouldSendKeepalive(idleThreshold: TimeInterval, now: Date = Date()) -> Bool {
         lock.lock()
         let lastActivity = max(lastInputAt, lastOutputAt)
-        let pending = hasUnsubmittedInput
+        let typed = typedCount
+        let uncertain = lineUncertain
         let tail = outputTail
         lock.unlock()
 
-        guard now.timeIntervalSince(lastActivity) >= idleThreshold else { return false }
-        guard !pending else { return false }
-        return Self.isSafePrompt(Self.lastLine(of: tail))
+        let idle = now.timeIntervalSince(lastActivity)
+        guard idle >= idleThreshold else { return false }
+
+        let line = Self.lastLine(of: tail)
+        let decision: String
+        if typed > 0 {
+            decision = "skip: \(typed) typed character(s) not submitted"
+        } else if uncertain {
+            decision = "skip: line edited with arrows/Tab since last Enter"
+        } else if !Self.isSafePrompt(line) {
+            decision = "skip: last line is not a plain prompt"
+        } else {
+            decision = "send"
+        }
+        if debug {
+            let message = "[keepalive] idle \(Int(idle))s, last line \(String(reflecting: line)): \(decision)\n"
+            FileHandle.standardError.write(Data(message.utf8))
+        }
+        return decision == "send"
     }
 
     // MARK: - Prompt classification
