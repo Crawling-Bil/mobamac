@@ -1,7 +1,25 @@
 # Changelog
 
 Newest first. Version numbers match `CFBundleShortVersionString` in
-`package-mobamac-app.sh`, and each release is tagged `v<version>.0`.
+`Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
+
+## 1.11
+
+Tidier repository and log files. No change to how connections work.
+
+Session logs are now named `2026-09-22_14-30-15_sw-ntt-dist01.log`:
+timestamp first so a name sort is also a date sort, and the session name
+reduced to plain characters. Quick Connect names such as `10.25.2.1:22`
+used to put a colon in the filename, which Finder shows as a slash. A
+second log opened in the same second now gets a `-2` suffix; before, it
+overwrote the first one.
+
+Repository layout: build, release and icon scripts moved to `Scripts/`
+(`Scripts/build-app.sh`, `Scripts/release.sh`, `Scripts/make-icon.sh`),
+the icon and logo to `Assets/`, the SSH-1 client to `Connection/SSH1/`,
+and views into `Terminal/`, `Sidebar/`, `Sessions/` and `Panels/`
+folders. A stray `build.log` is no longer tracked. The scripts work from
+any directory. See the layout in README.md.
 
 ## 1.10
 

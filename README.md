@@ -31,7 +31,35 @@ Needs Xcode Command Line Tools (no full Xcode required).
 ```
 git clone https://github.com/Crawling-Bil/mobamac.git
 cd mobamac
-./package-mobamac-app.sh
+Scripts/build-app.sh
 ```
 
 This builds the app and installs it straight into `/Applications`.
+
+## Project layout
+
+```
+Assets/              app icon and logo
+Scripts/
+  build-app.sh       build, bundle and install to /Applications (holds the version number)
+  release.sh         build, zip and publish a GitHub release (`notes` to refresh notes only)
+  make-icon.sh       turn a PNG into Assets/AppIcon.icns
+Sources/MobaMac/
+  App/               app entry point
+  Connection/        SSH, Telnet, Serial and SFTP sessions
+    SSH1/            fallback client for SSH-1-only devices
+  Models/            session profiles, groups, credential sets, snippets
+  Persistence/       Keychain, profile/snippet stores, known hosts, session logs
+  Support/           themes, fonts, validation, window state
+  Tools/             terminal highlighting, network tools, serial port discovery
+  ViewModels/        SessionManager: open tabs, connect, reconnect
+  Views/
+    Terminal/        terminal host views
+    Sidebar/         session tree and folders
+    Sessions/        new session, Quick Connect, credential sets, command palette
+    Panels/          SFTP, logs, snippets, network tools, broadcast
+Vendor/swift-nio-ssh patched SSH library (see its VENDORED.md)
+```
+
+Session logs are written to `~/Library/Logs/MobaMac/` as
+`<yyyy-MM-dd_HH-mm-ss>_<session>.log`.

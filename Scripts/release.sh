@@ -1,9 +1,9 @@
 #!/bin/bash
-# release.sh
+# Scripts/release.sh
 #
 # Builds MobaMac, zips it, and publishes a GitHub Release for whatever
-# version is currently set in package-mobamac-app.sh -- so sharing a new
-# build with someone becomes "bump the version in package-mobamac-app.sh,
+# version is currently set in Scripts/build-app.sh -- so sharing a new
+# build with someone becomes "bump the version in Scripts/build-app.sh,
 # commit, run this" instead of hand-zipping and messaging a file every time.
 #
 # Requires the GitHub CLI (`gh`), authenticated once via `gh auth login`.
@@ -11,19 +11,18 @@
 # URL to upload the zip manually instead of publishing it automatically.
 #
 # Usage:
-#   chmod +x release.sh   (once)
-#   ./release.sh          (run from inside the MobaMac project folder,
-#                           after committing whatever this release includes)
-#   ./release.sh notes    (only refresh the GitHub release notes for the
-#                           current version from CHANGELOG.md)
+#   Scripts/release.sh        (after committing whatever this release includes)
+#   Scripts/release.sh notes  (only refresh the GitHub release notes for the
+#                               current version from CHANGELOG.md)
 
 set -e
+cd "$(dirname "$0")/.."
 
 REPO="Crawling-Bil/mobamac"
 
-SHORT_VERSION=$(grep -A1 "CFBundleShortVersionString" package-mobamac-app.sh | tail -1 | sed -E 's/.*<string>(.*)<\/string>.*/\1/')
+SHORT_VERSION=$(grep -A1 "CFBundleShortVersionString" Scripts/build-app.sh | tail -1 | sed -E 's/.*<string>(.*)<\/string>.*/\1/')
 if [ -z "$SHORT_VERSION" ]; then
-    echo "Couldn't read CFBundleShortVersionString from package-mobamac-app.sh -- aborting."
+    echo "Couldn't read CFBundleShortVersionString from Scripts/build-app.sh -- aborting."
     exit 1
 fi
 TAG="v${SHORT_VERSION}.0"
@@ -44,8 +43,8 @@ if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
     NOTES="See the commit history for what changed in this version."
 fi
 
-# `./release.sh notes` refreshes the GitHub release notes for the version
-# currently in package-mobamac-app.sh and stops there. Useful when the
+# `Scripts/release.sh notes` refreshes the GitHub release notes for the version
+# currently in Scripts/build-app.sh and stops there. Useful when the
 # build is already published and only CHANGELOG.md changed, since that
 # needs no rebuild, no new tag and no new version number.
 if [ "$1" = "notes" ]; then
@@ -60,7 +59,7 @@ if [ "$1" = "notes" ]; then
 fi
 
 echo "== Building MobaMac $SHORT_VERSION =="
-./package-mobamac-app.sh
+Scripts/build-app.sh
 
 echo "== Zipping /Applications/MobaMac.app -> $ZIP_NAME =="
 rm -f "$ZIP_NAME"
@@ -74,7 +73,7 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
     if [ "$(git rev-list -n1 "$TAG")" != "$(git rev-parse HEAD)" ]; then
         echo "Tag $TAG already exists but points at a different commit."
         echo "That would publish this build under a tag pointing at older code."
-        echo "Bump CFBundleShortVersionString in package-mobamac-app.sh, commit, then run this again."
+        echo "Bump CFBundleShortVersionString in Scripts/build-app.sh, commit, then run this again."
         exit 1
     fi
     echo "Tag $TAG already exists at this commit."

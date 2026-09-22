@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Every session already tees its raw bytes to
-/// ~/Library/Logs/MobaMac/<name>_<timestamp>.log (SessionLogger),
+/// ~/Library/Logs/MobaMac/<yyyy-MM-dd_HH-mm-ss>_<name>.log (SessionLogger),
 /// independent of on-screen scrollback. This just gives you a way to browse
 /// and read those files without leaving the app or hunting through Finder.
 struct LogViewerView: View {

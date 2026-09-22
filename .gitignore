@@ -4,5 +4,9 @@
 .DS_Store
 xcuserdata/
 
-# Release zips built by release.sh
+# Release zips built by Scripts/release.sh
 *.zip
+
+# Local build output (see .vscode/tasks.json)
+build.log
+build.done
