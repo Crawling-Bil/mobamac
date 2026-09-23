@@ -57,6 +57,44 @@ final class ProfileStore: ObservableObject {
         try? keychain.getSecret(for: profile.id)
     }
 
+    /// A copy of `profile` ready to be opened in the Duplicate sheet: a new
+    /// id, no `lastConnectedAt` so it doesn't appear under Recent before it
+    /// has ever been used, and a name that doesn't collide.
+    ///
+    /// Nothing is saved here. The copy only becomes a profile if the sheet
+    /// is saved, which is why the secret comes back to the caller instead of
+    /// being written to the Keychain under the new id — a cancelled
+    /// duplicate would otherwise leave a password behind for a profile that
+    /// never existed.
+    ///
+    /// That secret is the part worth being careful about. Passwords are
+    /// keyed by `profile.id`, and the copy has a new one, so a duplicate
+    /// that copied only the struct would try to log in with no password at
+    /// all. That reads as a bug in the connection code rather than in the
+    /// copy, which is exactly the kind of thing that costs an afternoon.
+    func duplicate(_ profile: SessionProfile) -> (profile: SessionProfile, secret: String?) {
+        var copy = profile
+        copy.id = UUID()
+        copy.lastConnectedAt = nil
+        copy.name = duplicateName(basedOn: profile.name)
+        // A profile that logs in from a credential set has no secret of its
+        // own to carry across: the copy keeps the same `credentialSetID` and
+        // follows the same set. This is the common case and the clean one.
+        let secret = profile.credentialSetID == nil ? self.secret(for: profile) : nil
+        return (copy, secret)
+    }
+
+    /// "sw-dist01 copy", then "sw-dist01 copy 2" and upwards.
+    private func duplicateName(basedOn name: String) -> String {
+        let base = "\(name) copy"
+        guard profiles.contains(where: { $0.name == base }) else { return base }
+        var suffix = 2
+        while profiles.contains(where: { $0.name == "\(base) \(suffix)" }) {
+            suffix += 1
+        }
+        return "\(base) \(suffix)"
+    }
+
     func addGroup(named name: String, parentID: UUID? = nil) {
         groups.append(SessionGroup(name: name, parentID: parentID))
         save()

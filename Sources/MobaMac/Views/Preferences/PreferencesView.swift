@@ -24,6 +24,14 @@ private struct GeneralPreferencesView: View {
     /// can change it behind this view's back; reopening Settings re-reads it.
     @State private var confirmClose = CloseConfirmationSettings.isEnabled
 
+    private var lastCheckedText: String {
+        guard let date = updater.lastCheckDate else { return "Not checked yet." }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return "Last checked \(formatter.string(from: date))."
+    }
+
     var body: some View {
         Form {
             Picker("Appearance", selection: $appearanceSettings.appearance) {
@@ -63,8 +71,18 @@ private struct GeneralPreferencesView: View {
                     Text("This build has no update feed configured.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else {
+                    // Worth showing: a background check that quietly stopped
+                    // working looks exactly like no updates being released.
+                    Text(lastCheckedText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
+
+            Text("MobaMac asks before installing, and will not restart while a session is still connected.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding()

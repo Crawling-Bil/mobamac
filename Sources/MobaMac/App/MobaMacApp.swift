@@ -98,7 +98,12 @@ struct MobaMacApp: App {
                 // (see WindowFrameAutosave) takes over remembering whatever
                 // the user resizes it to on every launch after that.
                 .background(WindowFrameAutosave())
-                .onAppear { appDelegate.sessionManager = sessionManager }
+                .onAppear {
+                    appDelegate.sessionManager = sessionManager
+                    // The updater needs this to refuse a relaunch while
+                    // sessions are live. See UpdaterController.
+                    updater.sessionManager = sessionManager
+                }
         }
         .defaultSize(width: 1100, height: 680)
         // Menu-bar shortcuts, unlike a SwiftUI view modifier attached to
@@ -132,6 +137,12 @@ struct MobaMacApp: App {
             // discoverable, and — placed after New — takes precedence over
             // the standard Close item that shares ⌘W.
             CommandGroup(after: .newItem) {
+                Button("Duplicate Session") {
+                    sessionManager.requestDuplicateOfActiveSession()
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(sessionManager.activeSession == nil)
+
                 Button("Close Tab") {
                     sessionManager.requestCloseActive()
                 }

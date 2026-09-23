@@ -14,9 +14,24 @@ enum DeviceTypeOption: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Also doubles as the "Edit Session" sheet: pass `profileToEdit` to
-/// pre-fill the form and update that profile's id on save instead of
-/// creating a new one.
+/// An unsaved copy of a session on its way to the Duplicate sheet. Carries
+/// the secret separately because passwords live in the Keychain under the
+/// profile's id, and this copy's id doesn't exist there yet.
+struct SessionDraft: Identifiable {
+    let id = UUID()
+    let profile: SessionProfile
+    let secret: String?
+    /// Shown under the password field when the original's password could
+    /// not be read back, so an empty field is explained rather than
+    /// discovered later as a failed login.
+    let notice: String?
+}
+
+/// Also doubles as the "Edit Session" and "Duplicate Session" sheets: pass
+/// `profileToEdit` to pre-fill the form and save under that profile's id
+/// instead of creating a new one. A duplicate arrives the same way, already
+/// carrying a fresh id, so saving creates it and cancelling leaves nothing
+/// behind.
 struct NewSessionSheet: View {
     @EnvironmentObject var profileStore: ProfileStore
     @EnvironmentObject var credentialSetStore: CredentialSetStore
@@ -25,6 +40,8 @@ struct NewSessionSheet: View {
     private let editingID: UUID?
     private let editingGroupID: UUID?
     private let editingLastConnectedAt: Date?
+    private let isDuplicate: Bool
+    private let secretNotice: String?
 
     @State private var name: String
     @State private var kind: SessionKind
@@ -45,7 +62,15 @@ struct NewSessionSheet: View {
     @State private var credentialSetID: UUID?
     @State private var showingCredentialSets = false
 
-    init(profileToEdit: SessionProfile? = nil) {
+    init(
+        profileToEdit: SessionProfile? = nil,
+        duplicating: Bool = false,
+        prefilledSecret: String? = nil,
+        secretNotice: String? = nil
+    ) {
+        isDuplicate = duplicating
+        self.secretNotice = secretNotice
+        _secret = State(initialValue: prefilledSecret ?? "")
         editingID = profileToEdit?.id
         editingGroupID = profileToEdit?.groupID
         editingLastConnectedAt = profileToEdit?.lastConnectedAt
@@ -64,7 +89,16 @@ struct NewSessionSheet: View {
         _credentialSetID = State(initialValue: profileToEdit?.credentialSetID)
     }
 
-    private var isEditing: Bool { editingID != nil }
+    /// True only for a real edit. A duplicate also arrives with an id, but
+    /// that id has never been saved, so the form should read and behave as
+    /// if it were new — "leave blank to keep current" would be a lie when
+    /// there is no current password to keep.
+    private var isEditing: Bool { editingID != nil && !isDuplicate }
+
+    private var title: String {
+        if isDuplicate { return "Duplicate Session" }
+        return isEditing ? "Edit Session" : "New Session"
+    }
 
     private var usesHostAndPort: Bool { kind == .ssh || kind == .telnet }
 
@@ -90,7 +124,7 @@ struct NewSessionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isEditing ? "Edit Session" : "New Session").font(.title2.bold())
+            Text(title).font(.title2.bold())
 
             protocolPickerRow
 
@@ -153,6 +187,11 @@ struct NewSessionSheet: View {
                     switch authMethod {
                     case .password:
                         SecureField(isEditing ? "Password (leave blank to keep current)" : "Password", text: $secret)
+                        if let secretNotice {
+                            Text(secretNotice)
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     case .privateKey:
                         TextField("Private key path", text: $privateKeyPath)
                         Text("OpenSSH-format RSA or Ed25519 keys only (\"-----BEGIN OPENSSH PRIVATE KEY-----\"). Encrypted keys work too. Enter the passphrase below.")

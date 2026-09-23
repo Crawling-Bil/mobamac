@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var credentialSetStore: CredentialSetStore
     @State private var showingNewSession = false
     @State private var editingProfile: SessionProfile?
+    @State private var duplicatingSession: SessionDraft?
     @State private var showingSFTP = false
     @State private var showingSnippets = false
     @State private var showingQuickConnect = false
@@ -22,7 +23,11 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarView(showingNewSession: $showingNewSession, editingProfile: $editingProfile)
+            SidebarView(
+                showingNewSession: $showingNewSession,
+                editingProfile: $editingProfile,
+                duplicatingSession: $duplicatingSession
+            )
         } detail: {
             detailColumn
         }
@@ -39,6 +44,21 @@ struct ContentView: View {
         }
         .sheet(item: $editingProfile) { profile in
             NewSessionSheet(profileToEdit: profile)
+        }
+        .sheet(item: $duplicatingSession) { draft in
+            NewSessionSheet(
+                profileToEdit: draft.profile,
+                duplicating: true,
+                prefilledSecret: draft.secret,
+                secretNotice: draft.notice
+            )
+        }
+        // The File menu's Duplicate Session has no way to reach this view's
+        // state, so it asks through SessionManager instead.
+        .onChange(of: sessionManager.duplicateRequest) { _, request in
+            guard let request else { return }
+            duplicatingSession = SidebarView.draft(duplicating: request.profile, from: profileStore)
+            sessionManager.duplicateRequest = nil
         }
         .sheet(isPresented: $showingSFTP) {
             if case .ssh(let ssh)? = sessionManager.activeSession?.kind {

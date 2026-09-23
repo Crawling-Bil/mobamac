@@ -62,6 +62,7 @@ logs.
 | ⌘9 | Select the last tab |
 | ⌘⇧] / ⌘⇧[ | Next / previous tab, wrapping at both ends |
 | ⌃Tab / ⌃⇧Tab | Next / previous tab |
+| ⌘D | Duplicate the active tab's session |
 | ⌘W | Close the active tab |
 | ⌘K | Command palette |
 | ⌘R | Reconnect, on a tab that dropped or failed |

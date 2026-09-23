@@ -48,6 +48,7 @@ struct SidebarView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @Binding var showingNewSession: Bool
     @Binding var editingProfile: SessionProfile?
+    @Binding var duplicatingSession: SessionDraft?
 
     /// Set when a row is tapped; opening only actually happens once the
     /// user confirms in the dialog below. Requested explicitly: opening
@@ -449,12 +450,36 @@ struct SidebarView: View {
             } label: {
                 Label("Edit…", systemImage: "pencil")
             }
+            Button {
+                duplicatingSession = SidebarView.draft(duplicating: profile, from: profileStore)
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
             Button(role: .destructive) {
                 profileToDelete = profile
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    /// Shared with the File menu's Duplicate Session command, so both
+    /// produce the same copy and the same warning.
+    static func draft(duplicating profile: SessionProfile, from store: ProfileStore) -> SessionDraft {
+        let copy = store.duplicate(profile)
+        // Only worth warning about when this profile logs in with a password
+        // of its own and that password could not be read back. A credential
+        // set carries over on its own, and a key or agent login has nothing
+        // to copy.
+        let needsPassword = profile.kind == .ssh
+            && profile.credentialSetID == nil
+            && profile.authMethod == .password
+            && (copy.secret ?? "").isEmpty
+        return SessionDraft(
+            profile: copy.profile,
+            secret: copy.secret,
+            notice: needsPassword ? "Enter the password for this copy." : nil
+        )
     }
 
     private func icon(for kind: SessionKind) -> String {

@@ -30,7 +30,7 @@ BUNDLE_ID="com.aldi.mobamac"
 DEST="/Applications/$APP_NAME.app"
 
 SHORT_VERSION="1.16"
-BUNDLE_VERSION="22"
+BUNDLE_VERSION="23"
 
 # Where Sparkle looks for the list of available versions. Served by GitHub
 # Pages from the docs/ folder on main, which release.sh updates. Must be
@@ -126,7 +126,9 @@ if [ -n "$PUBKEY" ]; then
     <key>SUEnableAutomaticChecks</key>
     <true/>
     <key>SUScheduledCheckInterval</key>
-    <integer>86400</integer>"
+    <integer>86400</integer>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>"
     echo "Auto-update enabled, feed: $APPCAST_URL"
 else
     echo "No $PUBKEY_FILE — building without auto-update. See README \"Auto-update\" to generate a key pair."

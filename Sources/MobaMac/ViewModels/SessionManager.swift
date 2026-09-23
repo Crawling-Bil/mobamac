@@ -231,6 +231,34 @@ final class SessionManager: ObservableObject {
         close(active)
     }
 
+    /// A Duplicate asked for from the File menu.
+    ///
+    /// The menu lives in the App and ContentView owns the sheet, with no
+    /// route between them, so the request is parked here and ContentView
+    /// picks it up. The id makes two requests for the same profile compare
+    /// as different, which is what makes `onChange` fire the second time.
+    struct DuplicateRequest: Equatable {
+        let id = UUID()
+        let profile: SessionProfile
+
+        static func == (lhs: DuplicateRequest, rhs: DuplicateRequest) -> Bool {
+            lhs.id == rhs.id
+        }
+    }
+
+    @Published var duplicateRequest: DuplicateRequest?
+
+    /// Cmd-D duplicates the session the active tab was opened from.
+    ///
+    /// Not "the selected session in the sidebar", because the sidebar has no
+    /// selection: its rows are buttons that connect when clicked, so there
+    /// is nothing highlighted to act on. The context menu covers duplicating
+    /// something that isn't open.
+    func requestDuplicateOfActiveSession() {
+        guard let profile = activeSession?.profile else { return }
+        duplicateRequest = DuplicateRequest(profile: profile)
+    }
+
     // MARK: - Tab navigation
 
     /// Jump straight to a tab by position, 0-based. Out of range does

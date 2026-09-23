@@ -52,6 +52,16 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   both in Settings under Terminal: "Copy on select" and "Right-click
   pastes". With right-click paste on, Control-click still opens the
   context menu, and a multi-line paste still asks first.
+- Duplicate a session from its context menu in the sidebar, or with
+  Cmd-D for the one in the active tab. It opens straight into the form
+  with everything filled in, so adding twenty switches for one customer
+  is twenty names and addresses rather than twenty full forms. The
+  password comes across too; if it can't be read back, the copy says so
+  instead of failing to log in later.
+- An update will not restart MobaMac while a session is still
+  connected. It says how many, and offers to install anyway or wait --
+  waiting installs it the next time MobaMac is quit.
+- Settings shows when updates were last checked for.
 
 ## 1.15
 
