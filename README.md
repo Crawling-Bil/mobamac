@@ -9,6 +9,7 @@ A native macOS SSH/terminal client, a MobaXterm-style alternative built for Mac.
 <img width="1680" height="1047" alt="image" src="https://github.com/user-attachments/assets/612e0433-462a-408b-87ee-965dfb9ef9a0" />
 <img width="1680" height="1050" alt="image" src="https://github.com/user-attachments/assets/6890586e-d078-43b2-8bad-1f6a2319d9cf" />
 <img width="1679" height="984" alt="image" src="https://github.com/user-attachments/assets/c4b0d420-b552-459d-8970-478f005dd089" />
+<img width="1680" height="1050" alt="image" src="https://github.com/user-attachments/assets/010e40a9-5d30-40ca-b041-e1e9373ba1d2" />
 
 
 
