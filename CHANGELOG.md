@@ -3,6 +3,25 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.15
+
+- New status bar along the bottom of the window: protocol and
+  user@host:port for the active tab, how long it has been connected,
+  and the name of the log file it is writing. Click the log file name
+  to show it in Finder.
+- The broadcast banner is gone. Broadcast now shows as an indicator in
+  the status bar, red when the tab you are looking at is one of the
+  targets, so it no longer takes a full row above the terminal.
+- The window title is the active session's name, with the host as a
+  subtitle, instead of every window being called "MobaMac".
+- The toolbar is grouped into a "Panels" menu (SFTP, Snippets, Logs,
+  Network Tools) and a "Session" menu (Highlight, Theme, Close Tab),
+  leaving Quick Connect and Broadcast on their own. It is also a real
+  customizable toolbar now: View > Customize Toolbar rearranges it and
+  macOS remembers the arrangement.
+- Close Tab (Cmd-W) has moved to the File menu, so the shortcut keeps
+  working whatever you do to the toolbar.
+
 ## 1.14
 
 - Typing `exit` or `logout`, or a device closing the session normally,

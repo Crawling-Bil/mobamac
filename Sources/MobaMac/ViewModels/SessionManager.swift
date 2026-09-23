@@ -64,7 +64,7 @@ final class OpenSession: ObservableObject, Identifiable {
     /// file rather than appending a new connection's output to the previous
     /// attempt's log — safe to swap because host views always read
     /// `openSession.logger` dynamically per write, never a captured local.
-    var logger: SessionLogger
+    @Published var logger: SessionLogger
     @Published var title: String
     @Published var connectionIssue: SSHConnectionIssue?
     /// 0 while idle; set while an auto-reconnect loop (UI spec §9.2) is
@@ -107,6 +107,11 @@ final class OpenSession: ObservableObject, Identifiable {
     /// saved to the Keychain. Off for Quick Connect and for a password typed
     /// into the tab's prompt unless the user ticked "Save password".
     var savesSecretOnConnect = true
+    /// When this tab's current connection came up. The status bar shows how
+    /// long the session has been open from this. Set on every successful
+    /// connect and reconnect; left as-is on failure, where the status bar
+    /// shows the failure instead because `connectionIssue` is set.
+    @Published var connectedAt: Date?
 
     init(profile: SessionProfile, kind: OpenSessionKind, logger: SessionLogger) {
         self.profile = profile
@@ -311,6 +316,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh.start()
+                opened.connectedAt = Date()
                 self.markConnected(profile, provenSecret: opened.savesSecretOnConnect ? secret : nil)
             } catch {
                 if Self.isAuthenticationRejected(error), resolvedProfile.authMethod == .password, profile.credentialSetID == nil {
@@ -403,6 +409,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh1.start()
+                opened.connectedAt = Date()
                 self.markConnected(originalProfile, provenSecret: opened.savesSecretOnConnect ? opened.sessionSecret : nil)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -430,6 +437,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await telnet.start()
+                opened.connectedAt = Date()
                 self.markConnected(profile)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -460,6 +468,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await serial.start()
+                opened.connectedAt = Date()
                 self.markConnected(profile)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -474,6 +483,7 @@ final class SessionManager: ObservableObject {
         let opened = OpenSession(profile: profile, kind: .local, logger: logger)
         openSessions.append(opened)
         activeSessionID = opened.id
+        opened.connectedAt = Date()
         markConnected(profile)
     }
 
@@ -491,6 +501,7 @@ final class SessionManager: ObservableObject {
         Task { @MainActor in
             do {
                 try await ssh.retryTrustingNewHostKey()
+                session.connectedAt = Date()
                 self.markConnected(session.profile)
             } catch {
                 session.connectionIssue = Self.issue(from: error)
@@ -671,6 +682,7 @@ final class SessionManager: ObservableObject {
             session.logger = SessionLogger(profileName: profile.name)
             oldLogger.close()
             session.reconnectAttempt = 0
+            session.connectedAt = Date()
             markConnected(profile, provenSecret: session.savesSecretOnConnect ? session.sessionSecret : nil)
         } catch {
             if Self.isAuthenticationRejected(error), profile.kind == .ssh, profile.authMethod == .password, profile.credentialSetID == nil {

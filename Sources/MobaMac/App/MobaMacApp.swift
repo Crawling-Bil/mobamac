@@ -48,6 +48,20 @@ struct MobaMacApp: App {
         // first responder. That's what makes "press a hotkey, no click
         // needed" actually work for both macros and the command palette.
         .commands {
+            // ⌘W used to live on the toolbar's Close Tab button. Now that
+            // Close Tab sits inside the Session menu, a Button nested in a
+            // SwiftUI Menu isn't instantiated until the menu is opened, so
+            // its key equivalent would never be registered. Putting the
+            // command in the File menu keeps the shortcut working, makes it
+            // discoverable, and — placed after New — takes precedence over
+            // the standard Close item that shares ⌘W.
+            CommandGroup(after: .newItem) {
+                Button("Close Tab") {
+                    sessionManager.closeActive()
+                }
+                .keyboardShortcut("w", modifiers: .command)
+                .disabled(sessionManager.activeSession == nil)
+            }
             CommandMenu("Macros") {
                 if snippetStore.snippets.isEmpty {
                     Text("No snippets saved yet")

@@ -17,23 +17,7 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(showingNewSession: $showingNewSession, editingProfile: $editingProfile)
         } detail: {
-            VStack(spacing: 0) {
-                if !sessionManager.broadcastTargetIDs.isEmpty {
-                    broadcastBanner
-                }
-
-                if sessionManager.openSessions.isEmpty {
-                    emptyState
-                } else {
-                    TabView(selection: $sessionManager.activeSessionID) {
-                        ForEach(sessionManager.openSessions) { session in
-                            SessionTabView(session: session)
-                                .tag(Optional(session.id))
-                                .tabItem { Text(session.title) }
-                        }
-                    }
-                }
-            }
+            detailColumn
         }
         // SessionManager needs a way back to ProfileStore to stamp
         // `lastConnectedAt` when a connection succeeds (UI spec §1's
@@ -69,72 +53,154 @@ struct ContentView: View {
         .sheet(isPresented: $sessionManager.showingCommandPalette) {
             CommandPaletteView()
         }
-        .toolbar {
-            ToolbarItemGroup {
+        // `toolbar(id:)` rather than a plain `toolbar` so the items below are
+        // real, customizable toolbar items: View ▸ Customize Toolbar lets
+        // someone drag out what they never use and add back what they do.
+        // That only works if every item carries a stable id, which is also
+        // what lets macOS remember the arrangement across launches.
+        .toolbar(id: "main") {
+            ToolbarItem(id: "quickConnect", placement: .automatic) {
                 Button {
                     showingQuickConnect = true
                 } label: {
                     Label("Quick Connect", systemImage: "bolt")
                 }
                 .help("Connect to a host right now without saving a session profile.")
+            }
 
-                Button {
-                    showingSnippets = true
-                } label: {
-                    Label("Snippets", systemImage: "text.badge.plus")
-                }
-                .help("Saved commands you can fire into the active session with one click.")
+            ToolbarItem(id: "panels", placement: .automatic) {
+                panelsMenu
+            }
 
-                Button {
-                    showingLogViewer = true
-                } label: {
-                    Label("Logs", systemImage: "doc.text.magnifyingglass")
-                }
-                .help("Browse per-session log files.")
+            ToolbarItem(id: "session", placement: .automatic) {
+                sessionMenu
+            }
 
-                Button {
-                    showingNetworkTools = true
-                } label: {
-                    Label("Network Tools", systemImage: "network")
-                }
-                .help("Ping, traceroute, DNS lookup, port scan, subnet calculator.")
-
-                Button {
-                    showingSFTP = true
-                } label: {
-                    Label("SFTP", systemImage: "folder.badge.gearshape")
-                }
-                .help("Browse files on the active SSH session.")
-                .disabled(activeSSHSession == nil)
-
-                highlightToggleItem
-
-                themeMenuItem
-
-                Button {
-                    openBroadcastPopover()
-                } label: {
-                    Label(
-                        "Broadcast (\(sessionManager.broadcastTargetIDs.count))",
-                        systemImage: "dot.radiowaves.left.and.right"
-                    )
-                }
-                .popover(isPresented: $showingBroadcastPopover) {
-                    BroadcastPopoverView()
-                }
-                .help("Choose which open SSH tabs share keystrokes with each other (multi-exec).")
-                .tint(sessionManager.broadcastTargetIDs.isEmpty ? nil : .red)
-
-                Button {
-                    sessionManager.closeActive()
-                } label: {
-                    Label("Close Tab", systemImage: "xmark.circle")
-                }
-                .help("Close the active session and its log file (⌘W).")
-                .keyboardShortcut("w", modifiers: .command)
-                .disabled(sessionManager.activeSession == nil)
+            ToolbarItem(id: "broadcast", placement: .automatic) {
+                broadcastButton
             }
         }
+    }
+
+    /// The detail column: tabs (or the empty state) with the status bar
+    /// pinned underneath. `safeAreaInset` rather than a `VStack` so the
+    /// terminal keeps thinking it owns the full height and the bar never
+    /// ends up scrolling with content.
+    private var detailColumn: some View {
+        Group {
+            if sessionManager.openSessions.isEmpty {
+                emptyState
+            } else {
+                TabView(selection: $sessionManager.activeSessionID) {
+                    ForEach(sessionManager.openSessions) { session in
+                        SessionTabView(session: session)
+                            .tag(Optional(session.id))
+                            .tabItem { Text(session.title) }
+                    }
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let session = sessionManager.activeSession {
+                StatusBarView(session: session)
+            }
+        }
+        // The window title follows the active tab, so a row of MobaMac
+        // windows in Mission Control or the Window menu is readable instead
+        // of four identical "MobaMac" entries. The subtitle is a separate
+        // string on purpose: macOS draws it in its own smaller style, which
+        // is better than gluing the host onto the name with a dash.
+        .navigationTitle(sessionManager.activeSession?.title ?? "MobaMac")
+        .navigationSubtitle(windowSubtitle)
+    }
+
+    private var windowSubtitle: String {
+        guard let session = sessionManager.activeSession else { return "" }
+        switch session.profile.kind {
+        case .local:
+            return "Local Terminal"
+        case .serial:
+            let path = session.profile.serialPortPath ?? ""
+            return path.isEmpty ? "Serial" : (path as NSString).lastPathComponent
+        case .ssh, .telnet:
+            let hostPort = "\(session.profile.host):\(session.profile.port)"
+            let user = session.profile.username
+            return user.isEmpty ? hostPort : "\(user)@\(hostPort)"
+        }
+    }
+
+    // MARK: - Toolbar
+
+    /// Everything that opens an auxiliary view. Grouped because five separate
+    /// buttons were the first things to fall off the end of the toolbar on a
+    /// narrow window — which is exactly how "Add Folder" became invisible for
+    /// new users in 1.7.
+    private var panelsMenu: some View {
+        Menu {
+            Button {
+                showingSFTP = true
+            } label: {
+                Label("SFTP", systemImage: "folder.badge.gearshape")
+            }
+            .disabled(activeSSHSession == nil)
+
+            Button {
+                showingSnippets = true
+            } label: {
+                Label("Snippets", systemImage: "text.badge.plus")
+            }
+
+            Button {
+                showingLogViewer = true
+            } label: {
+                Label("Logs", systemImage: "doc.text.magnifyingglass")
+            }
+
+            Button {
+                showingNetworkTools = true
+            } label: {
+                Label("Network Tools", systemImage: "network")
+            }
+        } label: {
+            Label("Panels", systemImage: "sidebar.squares.right")
+        }
+        .help("SFTP, snippets, logs, and network tools.")
+    }
+
+    /// Actions that apply to the tab you are looking at right now.
+    private var sessionMenu: some View {
+        Menu {
+            highlightToggleItem
+            themeMenuItem
+            Divider()
+            Button {
+                sessionManager.closeActive()
+            } label: {
+                Label("Close Tab", systemImage: "xmark.circle")
+            }
+            .disabled(sessionManager.activeSession == nil)
+            .help("Close the active session and its log file (⌘W).")
+        } label: {
+            Label("Session", systemImage: "slider.horizontal.3")
+        }
+        .help("Highlighting, theme, and closing the active tab.")
+        .disabled(sessionManager.activeSession == nil)
+    }
+
+    private var broadcastButton: some View {
+        Button {
+            openBroadcastPopover()
+        } label: {
+            Label(
+                "Broadcast (\(sessionManager.broadcastTargetIDs.count))",
+                systemImage: "dot.radiowaves.left.and.right"
+            )
+        }
+        .popover(isPresented: $showingBroadcastPopover) {
+            BroadcastPopoverView()
+        }
+        .help("Choose which open SSH tabs share keystrokes with each other (multi-exec).")
+        .tint(sessionManager.broadcastTargetIDs.isEmpty ? nil : .red)
     }
 
     private var activeSSHSession: SSHConnectionSession? {
@@ -145,25 +211,23 @@ struct ContentView: View {
     }
 
     /// Only meaningful for SSH tabs — Telnet/Serial/Local never route through
-    /// the highlighting pipeline (see SSHTerminalHostView), so the button is
+    /// the highlighting pipeline (see SSHTerminalHostView), so the toggle is
     /// disabled rather than silently doing nothing for other session kinds.
     @ViewBuilder
     private var highlightToggleItem: some View {
         if activeSSHSession != nil, let session = sessionManager.activeSession {
             HighlightToggleButton(session: session)
         } else {
-            Button {} label: {
-                Label("Highlight", systemImage: "highlighter")
-            }
-            .disabled(true)
+            Toggle("Highlight Output", isOn: .constant(false))
+                .disabled(true)
         }
     }
 
     /// Live per-tab color-theme picker, requested as a follow-up to the
     /// Theme field already in New/Edit Session: that field only decides what
     /// a *freshly opened* tab starts with, so it can't restyle a session
-    /// you're already connected to. This toolbar menu is the "change it on
-    /// the session I'm looking at right now" path instead — it edits
+    /// you're already connected to. This menu is the "change it on the
+    /// session I'm looking at right now" path instead — it edits
     /// `OpenSession.themeID` directly, which `SessionTabView`'s `onChange`
     /// below immediately repaints the live `TerminalView` from.
     @ViewBuilder
@@ -193,7 +257,6 @@ struct ContentView: View {
         } label: {
             Label("Theme", systemImage: "paintpalette")
         }
-        .help("Change the color theme of the active session.")
         .disabled(sessionManager.activeSession == nil)
     }
 
@@ -231,22 +294,6 @@ struct ContentView: View {
         showingBroadcastPopover = true
     }
 
-    private var broadcastBanner: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-            Text(broadcastBannerText)
-                .font(.caption).bold()
-            Spacer()
-        }
-        .padding(6)
-        .background(Color.red.opacity(0.25))
-    }
-
-    private var broadcastBannerText: String {
-        let count = sessionManager.broadcastTargetIDs.count
-        return "Broadcast is ON. Keystrokes are shared across \(count) opted-in SSH tab\(count == 1 ? "" : "s")."
-    }
-
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "terminal")
@@ -262,21 +309,17 @@ struct ContentView: View {
     }
 }
 
-/// Backs the toolbar's Highlight toggle. Needs `@ObservedObject` (not just a
-/// plain closure reading `session.highlightingEnabled`) so SwiftUI actually
-/// redraws the button when that `@Published` flag flips — the same reason
-/// SessionTabView below observes `session` directly for `connectionIssue`.
+/// Backs the Session menu's Highlight toggle. Needs `@ObservedObject` (not
+/// just a plain closure reading `session.highlightingEnabled`) so SwiftUI
+/// actually redraws the checkmark when that `@Published` flag flips — the
+/// same reason SessionTabView below observes `session` directly for
+/// `connectionIssue`.
 private struct HighlightToggleButton: View {
     @ObservedObject var session: OpenSession
 
     var body: some View {
-        Button {
-            session.highlightingEnabled.toggle()
-        } label: {
-            Label("Highlight", systemImage: "highlighter")
-        }
-        .tint(session.highlightingEnabled ? .yellow : nil)
-        .help("Buffers output per line to highlight IPs, MAC addresses, and status/errors. Adds latency (including your own typed echo) until Enter is pressed, which is why it's off by default per session.")
+        Toggle("Highlight Output", isOn: $session.highlightingEnabled)
+            .help("Buffers output per line to highlight IPs, MAC addresses, and status/errors. Adds latency (including your own typed echo) until Enter is pressed, which is why it's off by default per session.")
     }
 }
 
