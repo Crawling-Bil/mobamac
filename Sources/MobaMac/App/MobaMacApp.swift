@@ -25,6 +25,7 @@ struct MobaMacApp: App {
     @StateObject private var sessionManager = SessionManager()
     @StateObject private var snippetStore = SnippetStore()
     @StateObject private var credentialSetStore = CredentialSetStore()
+    @StateObject private var updater = UpdaterController()
 
     var body: some Scene {
         WindowGroup {
@@ -48,6 +49,22 @@ struct MobaMacApp: App {
         // first responder. That's what makes "press a hotkey, no click
         // needed" actually work for both macros and the command palette.
         .commands {
+            // Right under "About MobaMac", which is where macOS apps have
+            // put this for twenty years. Sparkle owns everything after the
+            // click: the version check, the window showing the release notes
+            // from CHANGELOG.md, the download, and the swap-and-relaunch.
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
+
+                Toggle("Automatically Check for Updates", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }
+                ))
+                .disabled(!updater.isConfigured)
+            }
             // ⌘W used to live on the toolbar's Close Tab button. Now that
             // Close Tab sits inside the Session menu, a Button nested in a
             // SwiftUI Menu isn't instantiated until the menu is opened, so

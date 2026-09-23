@@ -10,3 +10,9 @@ xcuserdata/
 # Local build output (see .vscode/tasks.json)
 build.log
 build.done
+
+# Sparkle EdDSA private key. It normally lives only in the login Keychain;
+# this catches an accidental `generate_keys -x` export landing in the repo.
+# Losing this key means existing installs can never be updated again.
+private-key.txt
+*private-key*

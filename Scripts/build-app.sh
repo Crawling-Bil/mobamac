@@ -4,13 +4,18 @@
 # Builds MobaMac with `swift build` (no Xcode GUI needed), wraps the binary
 # in a real MobaMac.app bundle, and installs it to /Applications.
 #
-# The app's version lives in the Info.plist below
-# (CFBundleShortVersionString / CFBundleVersion); release.sh reads it from
-# here.
+# The app's version lives in SHORT_VERSION / BUNDLE_VERSION below;
+# release.sh reads SHORT_VERSION from here.
 #
 # Usage (from anywhere):
 #   Scripts/build-app.sh             build, install, and launch
 #   Scripts/build-app.sh --no-open   build and install only (release.sh uses this)
+#
+# Environment:
+#   MOBAMAC_SIGN_IDENTITY   code signing identity to use. Defaults to the
+#                           self-signed certificate named below. Set it to
+#                           "-" to go back to ad-hoc signing, but read the
+#                           note on SIGN_IDENTITY first.
 
 set -e
 cd "$(dirname "$0")/.."
@@ -23,6 +28,40 @@ fi
 APP_NAME="MobaMac"
 BUNDLE_ID="com.aldi.mobamac"
 DEST="/Applications/$APP_NAME.app"
+
+SHORT_VERSION="1.16"
+BUNDLE_VERSION="18"
+
+# Where Sparkle looks for the list of available versions. Served by GitHub
+# Pages from the docs/ folder on main, which release.sh updates. Must be
+# https, and deliberately not raw.githubusercontent.com: that is cached hard
+# enough that a new release can stay invisible for hours.
+APPCAST_URL="https://crawling-bil.github.io/mobamac/appcast.xml"
+PUBKEY_FILE="Scripts/sparkle-public-key.txt"
+
+# Ad-hoc signing ("-") mints a brand-new identity on every build, and macOS
+# treats a differently-signed binary as a different application. Every saved
+# SSH password would then prompt for Keychain access again after each
+# update, which for this app means a prompt per session. A self-signed
+# certificate keeps one stable identity across builds instead.
+# README "Code signing certificate" has the four steps to create one.
+SIGN_IDENTITY="${MOBAMAC_SIGN_IDENTITY:-MobaMac Self-Signed}"
+
+if [ "$SIGN_IDENTITY" != "-" ] && ! security find-identity -v -p codesigning | grep -qF "$SIGN_IDENTITY"; then
+    cat >&2 <<MSG
+Code signing certificate "$SIGN_IDENTITY" was not found in your keychain.
+
+Create it once (Keychain Access > Certificate Assistant > Create a
+Certificate): name it "$SIGN_IDENTITY", Identity Type "Self Signed Root",
+Certificate Type "Code Signing". README "Code signing certificate" has the
+full walkthrough.
+
+To build without it anyway:  MOBAMAC_SIGN_IDENTITY=- Scripts/build-app.sh
+That is ad-hoc signing, and macOS will re-ask for Keychain access to every
+saved SSH password after each build.
+MSG
+    exit 1
+fi
 
 echo "Building release configuration..."
 swift build -c release
@@ -40,8 +79,23 @@ WORKDIR=$(mktemp -d)
 BUNDLE_DIR="$WORKDIR/$APP_NAME.app"
 mkdir -p "$BUNDLE_DIR/Contents/MacOS"
 mkdir -p "$BUNDLE_DIR/Contents/Resources"
+mkdir -p "$BUNDLE_DIR/Contents/Frameworks"
 
 cp "$BINARY" "$BUNDLE_DIR/Contents/MacOS/$APP_NAME"
+
+# Sparkle ships as an XCFramework through SwiftPM. `swift build` links
+# against it but has no concept of an app bundle, so the framework has to be
+# copied in and the binary taught where to look for it at runtime.
+SPARKLE_FRAMEWORK=$(find .build/artifacts -type d -name "Sparkle.framework" -path "*macos*" 2>/dev/null | head -1)
+if [ -z "$SPARKLE_FRAMEWORK" ]; then
+    echo "Couldn't find Sparkle.framework under .build/artifacts — run 'swift package resolve' and try again."
+    exit 1
+fi
+echo "Bundling $(basename "$(dirname "$SPARKLE_FRAMEWORK")")/Sparkle.framework"
+# ditto, not cp: the framework is a versioned bundle held together by
+# symlinks that cp -R does not reproduce faithfully enough for codesign.
+ditto "$SPARKLE_FRAMEWORK" "$BUNDLE_DIR/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null || true
 
 ICON_KEY=""
 if [ -f "Assets/AppIcon.icns" ]; then
@@ -51,6 +105,29 @@ if [ -f "Assets/AppIcon.icns" ]; then
     echo "Bundling AppIcon.icns"
 else
     echo "No Assets/AppIcon.icns found, so the app will use the default icon. Run Scripts/make-icon.sh first for a custom one."
+fi
+
+# The EdDSA public key is what the app checks every downloaded update
+# against. Without it there is nothing to verify signatures with, so the
+# Sparkle keys are left out entirely rather than half-configured: the app
+# still builds and runs, it just won't offer updates.
+SPARKLE_KEYS=""
+PUBKEY=""
+if [ -f "$PUBKEY_FILE" ]; then
+    PUBKEY=$(tr -d '[:space:]' < "$PUBKEY_FILE")
+fi
+if [ -n "$PUBKEY" ]; then
+    SPARKLE_KEYS="    <key>SUFeedURL</key>
+    <string>$APPCAST_URL</string>
+    <key>SUPublicEDKey</key>
+    <string>$PUBKEY</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>"
+    echo "Auto-update enabled, feed: $APPCAST_URL"
+else
+    echo "No $PUBKEY_FILE — building without auto-update. See README \"Auto-update\" to generate a key pair."
 fi
 
 cat > "$BUNDLE_DIR/Contents/Info.plist" << EOF
@@ -67,20 +144,49 @@ cat > "$BUNDLE_DIR/Contents/Info.plist" << EOF
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.15</string>
+    <string>$SHORT_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>17</string>
+    <string>$BUNDLE_VERSION</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+$SPARKLE_KEYS
 $ICON_KEY
 </dict>
 </plist>
 EOF
 
-echo "Signing (ad-hoc, local use only)..."
-codesign --force --deep --sign - "$BUNDLE_DIR"
+# Signing is inside-out on purpose. codesign seals whatever a bundle
+# contains, so signing the framework first and the app afterwards is the
+# only order where nothing invalidates a seal made earlier. This is also
+# why there is no --deep here: --deep re-signs nested bundles that were
+# already signed correctly, which is what breaks
+# `codesign --verify --deep --strict` and makes generate_appcast reject the
+# archive.
+#
+# No --options runtime either. Hardened Runtime brings library validation,
+# which refuses to load a framework signed by anything other than the same
+# Team ID — and a self-signed certificate has no Team ID.
+SPARKLE_DEST="$BUNDLE_DIR/Contents/Frameworks/Sparkle.framework"
+
+echo "Signing Sparkle.framework as \"$SIGN_IDENTITY\"..."
+# -depth so the deepest nested bundle is signed first.
+find "$SPARKLE_DEST" \( -name "*.xpc" -o -name "*.app" \) -depth | while IFS= read -r nested; do
+    codesign --force --sign "$SIGN_IDENTITY" "$nested"
+done
+# Autoupdate is a bare Mach-O helper in some Sparkle versions, not a bundle,
+# so find above doesn't catch it.
+for helper in "$SPARKLE_DEST"/Versions/*/Autoupdate; do
+    [ -f "$helper" ] && codesign --force --sign "$SIGN_IDENTITY" "$helper"
+done
+codesign --force --sign "$SIGN_IDENTITY" "$SPARKLE_DEST"
+
+echo "Signing $APP_NAME.app as \"$SIGN_IDENTITY\"..."
+codesign --force --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+
+echo "Verifying signature..."
+codesign --verify --deep --strict "$BUNDLE_DIR"
 
 echo "Quitting any running instance..."
 osascript -e "quit app \"$APP_NAME\"" 2>/dev/null || true
@@ -99,7 +205,8 @@ fi
 
 echo "Installing to $DEST..."
 rm -rf "$DEST"
-cp -R "$BUNDLE_DIR" "$DEST"
+# ditto again rather than cp -R, for the framework symlinks inside.
+ditto "$BUNDLE_DIR" "$DEST"
 rm -rf "$WORKDIR"
 
 if [ "$OPEN_AFTER_INSTALL" = "1" ]; then

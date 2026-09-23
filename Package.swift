@@ -19,7 +19,11 @@ let package = Package(
         // replaces it throughout the graph. It accepts "SSH-1.99" version
         // banners (Cisco IOS, PAN-OS default), which upstream rejects. See
         // Vendor/swift-nio-ssh/VENDORED.md.
-        .package(path: "Vendor/swift-nio-ssh")
+        .package(path: "Vendor/swift-nio-ssh"),
+        // In-app updates from GitHub Releases, so a new version is
+        // "Install Update" instead of download, unzip, delete the old app,
+        // drag the new one. See README "Auto-update".
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", .upToNextMajor(from: "2.6.0"))
     ],
     targets: [
         // Shim exposing Apple's CommonCrypto (DES/3DES) to Swift -- needed
@@ -34,7 +38,8 @@ let package = Package(
                 "Citadel",
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "NIOSSH", package: "swift-nio-ssh"),
-                "CCommonCrypto"
+                "CCommonCrypto",
+                .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/MobaMac",
             // Manifest needs tools-version 6.0 for .macOS(.v15) above, but the

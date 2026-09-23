@@ -697,6 +697,27 @@ final class SessionManager: ObservableObject {
         }
     }
 
+    /// Moves keyboard focus to a tab's terminal.
+    ///
+    /// ContentView keeps every open tab's view in the hierarchy and only
+    /// fades the inactive ones out, so that each terminal's NSView — and the
+    /// scrollback it owns — survives a tab switch. Opacity does not move the
+    /// first responder, though, so without this a switch leaves focus on the
+    /// terminal that just became invisible and typing disappears into it.
+    ///
+    /// Lives here rather than in ContentView because reaching through
+    /// `TerminalView` means importing SwiftTerm, and SwiftTerm exports its
+    /// own `Color` type that then makes every SwiftUI `Color` in that file
+    /// ambiguous.
+    func focusTerminal(of session: OpenSession) {
+        guard let view = session.terminalView else { return }
+        // Next runloop pass: on the turn the selection changes, the newly
+        // active view may not be in a window yet.
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+    }
+
     /// Reorders the tab strip (SessionTabBar's drag-to-reorder). Takes the
     /// same `move(fromOffsets:toOffset:)` convention as `ForEach.onMove`:
     /// `to` is the index the tab is inserted *before*.

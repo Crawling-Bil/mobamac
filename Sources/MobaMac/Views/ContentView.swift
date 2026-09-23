@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import SwiftTerm
 
 struct ContentView: View {
     @EnvironmentObject var profileStore: ProfileStore
@@ -145,13 +144,8 @@ struct ContentView: View {
         // tabs leaves the first responder on the terminal that just became
         // invisible, and typing goes into a tab nobody can see.
         .onChange(of: sessionManager.activeSessionID) { _, newValue in
-            guard
-                let session = sessionManager.openSessions.first(where: { $0.id == newValue }),
-                let view = session.terminalView
-            else { return }
-            DispatchQueue.main.async {
-                view.window?.makeFirstResponder(view)
-            }
+            guard let session = sessionManager.openSessions.first(where: { $0.id == newValue }) else { return }
+            sessionManager.focusTerminal(of: session)
         }
     }
 

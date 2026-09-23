@@ -3,6 +3,18 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.16
+
+- MobaMac updates itself. It checks once a day, shows what changed, and
+  installs the new version in place. No more downloading a zip, deleting
+  the old app and dragging in the new one. MobaMac > Check for Updates
+  checks right away, and the item below it turns the daily check off.
+- The app is now signed with a stable self-signed certificate instead of
+  a throwaway ad-hoc one. Without that, macOS treats each build as a
+  different app and asks for Keychain access to every saved SSH password
+  again after every update. Building from source now needs a certificate
+  created once; the README has the four steps.
+
 ## 1.15
 
 - New status bar along the bottom of the window: protocol and
