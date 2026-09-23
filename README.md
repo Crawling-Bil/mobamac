@@ -12,8 +12,11 @@ Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/m
 - Sidebar organizes sessions into Customer → Device Type folders
 - Multiple tabs at once, with a live connection status dot per session
 - Broadcast keystrokes to several SSH sessions at the same time
-- Color themes, session logging, saved macros, quick connect, and a command palette (⌘K)
+- Color themes, saved macros, quick connect, and a command palette (⌘K)
 - Auto-reconnect, credential sets for reusing logins across devices
+- Session logs in plain text: no color codes or cursor movement, so a log can go straight into a report
+- Network tools, SFTP and snippets as a resizable side panel, not a modal sheet
+- Light, Dark or System for the app, independently of the terminal's own theme
 - Passwords are stored in the macOS Keychain, never in plain text
 - Updates install themselves: MobaMac checks once a day and offers to update in place
 
@@ -32,6 +35,24 @@ one, shows what changed and offers to install it. There is nothing to
 download, unzip or drag again. **MobaMac → Check for Updates…** checks
 immediately, and the **Automatically Check for Updates** item next to it
 turns the daily check off.
+
+## Settings
+
+**MobaMac → Settings…** (⌘,), in three tabs.
+
+**General** holds the appearance (System, Light or Dark — the terminal keeps
+its own color theme either way), whether to confirm before closing a session
+that is still connected, and the update options.
+
+**Terminal** holds two habits carried over from MobaXterm and PuTTY, both off
+by default because they contradict how other Mac apps behave: *Copy on
+select*, and *Right-click pastes* (Control-click still opens the context
+menu, and a multi-line paste still asks first).
+
+**Logging** is where the log folder lives, along with *Keep raw session logs*
+— a `.raw` file beside each `.log` holding the unfiltered bytes, for when the
+escape sequences are the thing you need to see — and how long to keep old
+logs.
 
 ## Keyboard shortcuts
 
@@ -165,17 +186,20 @@ Sources/MobaMac/
   Connection/        SSH, Telnet, Serial and SFTP sessions
     SSH1/            fallback client for SSH-1-only devices
   Models/            session profiles, groups, credential sets, snippets
-  Persistence/       Keychain, profile/snippet stores, known hosts, session logs
-  Support/           themes, fonts, validation, window state
-  Tools/             terminal highlighting, network tools, serial port discovery
+  Persistence/       Keychain, stores, known hosts, session logs and their settings
+  Support/           themes, fonts, appearance, terminal behaviour, updates, dialogs
+  Tools/             log sanitizer, terminal highlighting, network tools, serial ports
   ViewModels/        SessionManager: open tabs, connect, reconnect
   Views/
     Terminal/        terminal host views
     Sidebar/         session tree and folders
     Sessions/        new session, Quick Connect, credential sets, command palette
     Panels/          SFTP, logs, snippets, network tools, broadcast
+    Preferences/     the Settings window
 Vendor/swift-nio-ssh patched SSH library (see its VENDORED.md)
 ```
 
-Session logs are written to `~/Library/Logs/MobaMac/` as
-`<yyyy-MM-dd_HH-mm-ss>_<session>.log`.
+Session logs go to `~/Library/Logs/MobaMac/` unless another folder is set in
+Settings, named `<yyyy-MM-dd_HH-mm-ss>_<session>.log`. What they contain is
+plain text: `TerminalOutputSanitizer` takes out the color codes, cursor
+movement and line redrawing, so the file reads the way the screen did.
