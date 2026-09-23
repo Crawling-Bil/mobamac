@@ -12,6 +12,7 @@ import AppKit
 struct StatusBarView: View {
     @ObservedObject var session: OpenSession
     @EnvironmentObject var sessionManager: SessionManager
+    @ObservedObject private var logStatus = LogStatus.shared
 
     var body: some View {
         HStack(spacing: 12) {
@@ -33,6 +34,7 @@ struct StatusBarView: View {
 
             Spacer(minLength: 12)
 
+            logWarning
             broadcastIndicator
             logFileButton
         }
@@ -141,6 +143,21 @@ struct StatusBarView: View {
                         ? "Broadcast is on and this tab is one of the \(count) targets, so what you type here is also sent to the others."
                         : "Broadcast is on for \(count) other tab\(count == 1 ? "" : "s"). This tab is not a target."
                 )
+        }
+    }
+
+    /// Shown when the chosen log folder could not be written to and the
+    /// default was used instead. It is a note, not an alert: the session
+    /// connected fine, and interrupting that with a dialog over a log file
+    /// would be the wrong trade.
+    @ViewBuilder
+    private var logWarning: some View {
+        if let warning = logStatus.warning {
+            Label(warning, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+                .help("Set a different folder in Settings, under Logging.")
         }
     }
 

@@ -22,6 +22,20 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
 - The status bar no longer covers the last row of the terminal. It also
   made the device believe the screen was a row taller than it was, so
   long output like "show running-config" paged against the wrong height.
+- There is a Settings window (Cmd-,). It holds the appearance setting,
+  the update options, and everything about logging.
+- The app follows System, Light or Dark, whichever you pick. This is the
+  app's own windows only: the terminal keeps its own color theme, so a
+  dark terminal in a light app works the way it always did.
+- Session logs can go in a folder of your choosing instead of
+  ~/Library/Logs/MobaMac. New sessions use the new folder; sessions
+  already open keep writing where they started. If the folder turns out
+  to be unavailable, on an unplugged drive say, the session still
+  connects and its log goes to the default folder, with a note in the
+  status bar.
+- Old logs are deleted only from the folder logging currently points at,
+  and only MobaMac's own .log and .raw files, since the folder you pick
+  may well have your own files in it.
 
 ## 1.15
 

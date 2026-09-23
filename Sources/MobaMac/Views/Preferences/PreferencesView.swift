@@ -1,0 +1,140 @@
+import SwiftUI
+import AppKit
+
+/// The Settings window (⌘,). A `Settings` scene rather than a sheet, so
+/// macOS puts "Settings…" in the app menu and manages the window itself.
+struct PreferencesView: View {
+    var body: some View {
+        TabView {
+            GeneralPreferencesView()
+                .tabItem { Label("General", systemImage: "gearshape") }
+            LoggingPreferencesView()
+                .tabItem { Label("Logging", systemImage: "doc.text") }
+        }
+        .frame(width: 540, height: 280)
+    }
+}
+
+private struct GeneralPreferencesView: View {
+    @EnvironmentObject var appearanceSettings: AppearanceSettings
+    @EnvironmentObject var updater: UpdaterController
+
+    var body: some View {
+        Form {
+            Picker("Appearance", selection: $appearanceSettings.appearance) {
+                ForEach(AppAppearance.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text("Applies to the app's own windows. The terminal keeps its own color theme.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Toggle("Automatically check for updates", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.automaticallyChecksForUpdates = $0 }
+            ))
+            .disabled(!updater.isConfigured)
+
+            HStack {
+                Button("Check Now") { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+                if !updater.isConfigured {
+                    Text("This build has no update feed configured.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+private struct LoggingPreferencesView: View {
+    /// Mirrors what is in UserDefaults so the fields redraw after a change.
+    /// The settings themselves are the source of truth; these are just the
+    /// view's copy.
+    @State private var directoryPath = LogSettings.activeDirectory.path
+    @State private var keepRawLogs = LogSettings.keepRawLogs
+    @State private var retentionDays = LogRetentionManager.retentionDays
+
+    private static let retentionChoices = [0, 7, 30, 90, 365]
+
+    var body: some View {
+        Form {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Session log folder")
+                    .font(.callout)
+                Text(directoryPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Choose…", action: chooseFolder)
+                    Button("Reveal in Finder", action: revealFolder)
+                    Button("Reset to Default", action: resetFolder)
+                        .disabled(LogSettings.configuredDirectory == nil)
+                }
+                Text("Applies to new sessions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Toggle("Keep raw session logs (with color codes)", isOn: $keepRawLogs)
+                .onChange(of: keepRawLogs) { _, newValue in
+                    LogSettings.keepRawLogs = newValue
+                }
+            Text("Writes a .raw file beside each .log. Useful when you need to see what the device actually sent.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Delete logs older than", selection: $retentionDays) {
+                ForEach(Self.retentionChoices, id: \.self) { days in
+                    Text(days == 0 ? "Never" : "\(days) days").tag(days)
+                }
+            }
+            .onChange(of: retentionDays) { _, newValue in
+                LogRetentionManager.retentionDays = newValue
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Choose where MobaMac writes session logs."
+        panel.directoryURL = LogSettings.activeDirectory
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        LogSettings.setDirectory(url)
+        directoryPath = url.path
+    }
+
+    private func revealFolder() {
+        let url = LogSettings.activeDirectory
+        // A folder that has never been written to doesn't exist yet, and
+        // Finder just beeps at a path that isn't there.
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func resetFolder() {
+        LogSettings.resetDirectoryToDefault()
+        directoryPath = LogSettings.defaultDirectory.path
+    }
+}

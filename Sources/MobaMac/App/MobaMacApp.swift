@@ -26,6 +26,7 @@ struct MobaMacApp: App {
     @StateObject private var snippetStore = SnippetStore()
     @StateObject private var credentialSetStore = CredentialSetStore()
     @StateObject private var updater = UpdaterController()
+    @StateObject private var appearanceSettings = AppearanceSettings()
 
     var body: some Scene {
         WindowGroup {
@@ -35,6 +36,11 @@ struct MobaMacApp: App {
                 .environmentObject(snippetStore)
                 .environmentObject(credentialSetStore)
                 .frame(minWidth: 900, minHeight: 560)
+                // Light/dark for the app's chrome only. The terminal is
+                // painted by TerminalTheme through SwiftTerm and never reads
+                // the color scheme, which is the point: a dark terminal in a
+                // light app is a normal way to work.
+                .preferredColorScheme(appearanceSettings.appearance.colorScheme)
                 // UI spec: window defaults — a comfortable first-launch size
                 // (bigger than the bare minimum above), and frame autosave
                 // (see WindowFrameAutosave) takes over remembering whatever
@@ -120,6 +126,16 @@ struct MobaMacApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
             }
+        }
+
+        // A `Settings` scene, not a sheet: macOS adds "Settings…" to the app
+        // menu with its standard place and shortcut, and keeps one window
+        // rather than one per document window.
+        Settings {
+            PreferencesView()
+                .environmentObject(appearanceSettings)
+                .environmentObject(updater)
+                .preferredColorScheme(appearanceSettings.appearance.colorScheme)
         }
     }
 }

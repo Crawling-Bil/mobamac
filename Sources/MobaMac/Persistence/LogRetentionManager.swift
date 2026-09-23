@@ -19,11 +19,13 @@ enum LogRetentionManager {
         set { UserDefaults.standard.set(newValue, forKey: retentionDaysKey) }
     }
 
-    /// Same path `SessionLogger` writes to and `LogViewerView` browses —
-    /// kept here as the one source of truth so all three never drift apart.
+    /// Whatever folder logging is pointed at right now — the user's choice
+    /// if they made one, the default otherwise. Deliberately only this one
+    /// folder: changing the log folder leaves the old one alone rather than
+    /// having a retention sweep follow the user around and delete from
+    /// somewhere they stopped using.
     static var logDirectory: URL {
-        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/MobaMac", isDirectory: true)
+        LogSettings.activeDirectory
     }
 
     /// Deletes every `.log` file whose last modification date is older than

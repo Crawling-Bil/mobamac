@@ -30,7 +30,7 @@ BUNDLE_ID="com.aldi.mobamac"
 DEST="/Applications/$APP_NAME.app"
 
 SHORT_VERSION="1.16"
-BUNDLE_VERSION="19"
+BUNDLE_VERSION="20"
 
 # Where Sparkle looks for the list of available versions. Served by GitHub
 # Pages from the docs/ folder on main, which release.sh updates. Must be

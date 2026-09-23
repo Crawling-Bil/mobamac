@@ -29,11 +29,33 @@ final class SessionLogger {
     /// Where the unfiltered bytes go when `LogSettings.keepRawLogs` is on,
     /// nil otherwise.
     let rawFileURL: URL?
+    /// Held for the life of the log when the chosen folder came from a
+    /// security-scoped bookmark, and released in `close()`.
+    private let scopedRoot: URL?
 
+    /// The folder comes from `LogSettings` rather than from the caller.
+    /// SessionManager creates loggers in seven places, and threading a path
+    /// through all of them only to have each one read the same preference is
+    /// a way to end up with one that forgets.
     init(profileName: String, logDirectory: URL? = nil) {
-        let base = logDirectory ?? FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/MobaMac", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let base: URL
+        if let logDirectory {
+            base = logDirectory
+            scopedRoot = nil
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        } else {
+            let resolved = LogSettings.resolveForWriting()
+            base = resolved.url
+            scopedRoot = resolved.scopedRoot
+            // Said once, and cleared as soon as a session gets the folder it
+            // asked for, so the warning reflects the present rather than
+            // some failure from an hour ago.
+            if resolved.didFallBack {
+                LogStatus.shared.reportFallback()
+            } else {
+                LogStatus.shared.clear()
+            }
+        }
 
         // `createFile` truncates an existing file, so two logs opened in the
         // same second (a quick Try Again, say) would otherwise wipe the first.
@@ -121,5 +143,6 @@ final class SessionLogger {
         }
         try? fileHandle?.close()
         try? rawFileHandle?.close()
+        scopedRoot?.stopAccessingSecurityScopedResource()
     }
 }
