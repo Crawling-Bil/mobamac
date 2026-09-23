@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// connected session" preference — that setting is about the friction of
     /// closing one tab, while this is every session at once and not
     /// something to lose by reflex.
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminationReply {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let sessionManager else { return .terminateNow }
         let live = sessionManager.liveSessionCount
         guard live > 0 else { return .terminateNow }
