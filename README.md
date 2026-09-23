@@ -2,6 +2,16 @@
 
 A native macOS SSH/terminal client, a MobaXterm-style alternative built for Mac.
 
+<img width="1680" height="1050" alt="image" src="https://github.com/user-attachments/assets/305441ce-af4d-45a1-b889-0e4d92173d9d" />
+<img width="541" height="369" alt="image" src="https://github.com/user-attachments/assets/c799814f-99a7-4583-b517-d5670f473438" />
+<img width="542" height="368" alt="image" src="https://github.com/user-attachments/assets/af2d9629-a234-4c3b-954c-e087aaf51df6" />
+<img width="540" height="371" alt="image" src="https://github.com/user-attachments/assets/e6bbba62-37e1-4077-9aa1-a44a36c55f21" />
+<img width="1680" height="1047" alt="image" src="https://github.com/user-attachments/assets/612e0433-462a-408b-87ee-965dfb9ef9a0" />
+<img width="1680" height="1050" alt="image" src="https://github.com/user-attachments/assets/6890586e-d078-43b2-8bad-1f6a2319d9cf" />
+<img width="1679" height="984" alt="image" src="https://github.com/user-attachments/assets/c4b0d420-b552-459d-8970-478f005dd089" />
+
+
+
 ## Download
 
 Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/mobamac/releases/latest). [CHANGELOG.md](CHANGELOG.md) lists what changed in each version.
