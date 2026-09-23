@@ -11,8 +11,18 @@ xcuserdata/
 build.log
 build.done
 
-# Sparkle EdDSA private key. It normally lives only in the login Keychain;
-# this catches an accidental `generate_keys -x` export landing in the repo.
-# Losing this key means existing installs can never be updated again.
+# Sparkle EdDSA private key. It belongs in the login Keychain and a
+# password manager, never in this repo. The patterns are deliberately wide:
+# generate_keys names its export after whatever you pass to -x, and the
+# obvious names people type have spaces and capitals that a single
+# lowercase-hyphen pattern misses. A leaked signing key cannot be quietly
+# rotated -- anyone already running an older build trusts only the old one.
 private-key.txt
 *private-key*
+*private_key*
+*privatekey*
+*PrivateKey*
+*Private Key*
+*private key*
+*PRIVATE KEY*
+*.privkey
