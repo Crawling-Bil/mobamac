@@ -131,7 +131,6 @@ struct SidebarView: View {
                 groupedSessionsSection
             }
         }
-        .safeAreaInset(edge: .bottom) { sidebarFooter }
         .searchable(text: $searchText, prompt: "Search sessions")
         .help("Search saved sessions by name or host.")
         .toolbar { toolbarContent }
@@ -262,12 +261,14 @@ struct SidebarView: View {
     /// `.toolbar { }` — same type-checker reasoning as the sections above.
     @ToolbarContentBuilder
     /// `.navigation` puts this at the leading end of the toolbar, next to
-    /// the sidebar toggle, instead of leaving it to compete for space with
-    /// the detail pane's nine-item toolbar group. Without that, macOS
-    /// pushed it into the toolbar's overflow menu on anything but a very
-    /// wide window, which made "New Folder" effectively unreachable: the
-    /// only other way into it was the context menu on a Customer folder,
-    /// which needs a Customer folder to already exist.
+    /// the sidebar toggle, rather than in the trailing group that macOS
+    /// collapses into the overflow menu first. That is what keeps it
+    /// visible at the window's 900pt minimum width, and it is why the
+    /// second copy of this menu that used to sit at the bottom of the
+    /// sidebar could be removed: with `.navigation` placement plus a
+    /// detail toolbar that is now four items instead of nine, nothing is
+    /// competing for the space that pushed "New Folder" out of reach in
+    /// 1.7. Do not move this to `.automatic` — that was the original bug.
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             Menu {
@@ -297,27 +298,6 @@ struct SidebarView: View {
         } label: {
             Label("Manage Folders…", systemImage: "folder.badge.gearshape")
         }
-    }
-
-    /// The same menu again, parked at the bottom of the sidebar. The
-    /// toolbar copy can be squeezed out by window width; this one can't,
-    /// and a sidebar whose only folder ever is "Ungrouped" needs at least
-    /// one visible way to make a real one.
-    private var sidebarFooter: some View {
-        HStack {
-            Menu {
-                addMenuItems
-            } label: {
-                Label("Add", systemImage: "plus")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("New session, new folder, or manage folders.")
-            Spacer()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     /// Outer tree level — one Customer folder. Pulled out of `body` on its

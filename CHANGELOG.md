@@ -21,6 +21,20 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   macOS remembers the arrangement.
 - Close Tab (Cmd-W) has moved to the File menu, so the shortcut keeps
   working whatever you do to the toolbar.
+- Tabs are their own row above the terminal instead of a pill in the
+  middle of the toolbar. Each tab shows a connection dot, and a close
+  button on hover. Middle-click closes a tab, and tabs can be dragged
+  to reorder.
+- The Add menu no longer appears twice. The copy at the bottom of the
+  sidebar is gone; the one in the toolbar is pinned to the leading end
+  where macOS cannot push it into the overflow menu.
+- Network Tools is a resizable panel on the right instead of a sheet,
+  so you can ping a gateway while typing in the session behind it. The
+  panel minimizes to a strip, and closing it no longer throws away
+  what is in it.
+- Each network tool keeps its own host and results. Switching from
+  Ping to Traceroute no longer shows the stale ping output, and coming
+  back to Ping shows what Ping actually printed.
 
 ## 1.14
 

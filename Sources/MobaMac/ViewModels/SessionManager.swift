@@ -697,6 +697,16 @@ final class SessionManager: ObservableObject {
         }
     }
 
+    /// Reorders the tab strip (SessionTabBar's drag-to-reorder). Takes the
+    /// same `move(fromOffsets:toOffset:)` convention as `ForEach.onMove`:
+    /// `to` is the index the tab is inserted *before*.
+    func moveSession(from source: Int, to destination: Int) {
+        guard openSessions.indices.contains(source) else { return }
+        guard destination >= 0, destination <= openSessions.count else { return }
+        guard destination != source, destination != source + 1 else { return }
+        openSessions.move(fromOffsets: IndexSet(integer: source), toOffset: destination)
+    }
+
     func close(_ session: OpenSession) {
         reconnectTasks[session.id]?.cancel()
         reconnectTasks[session.id] = nil

@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import SwiftTerm
 
 struct ContentView: View {
     @EnvironmentObject var profileStore: ProfileStore
@@ -7,11 +9,17 @@ struct ContentView: View {
     @State private var showingNewSession = false
     @State private var editingProfile: SessionProfile?
     @State private var showingSFTP = false
-    @State private var showingNetworkTools = false
     @State private var showingSnippets = false
     @State private var showingQuickConnect = false
     @State private var showingLogViewer = false
     @State private var showingBroadcastPopover = false
+    /// Which right-hand panel is open, if any. One slot on purpose: two
+    /// panels side by side would leave the terminal with nothing.
+    @State private var activePanel: DetailPanel?
+    @State private var panelMinimized = false
+    /// Owned here rather than by the panel, so its results outlive every
+    /// open/close of the panel. See NetworkToolsModel.
+    @StateObject private var networkTools = NetworkToolsModel()
 
     var body: some View {
         NavigationSplitView {
@@ -37,9 +45,6 @@ struct ContentView: View {
             if case .ssh(let ssh)? = sessionManager.activeSession?.kind {
                 SFTPBrowserView(ssh: ssh)
             }
-        }
-        .sheet(isPresented: $showingNetworkTools) {
-            NetworkToolsView()
         }
         .sheet(isPresented: $showingSnippets) {
             SnippetsPanelView()
@@ -82,21 +87,20 @@ struct ContentView: View {
         }
     }
 
-    /// The detail column: tabs (or the empty state) with the status bar
-    /// pinned underneath. `safeAreaInset` rather than a `VStack` so the
-    /// terminal keeps thinking it owns the full height and the bar never
-    /// ends up scrolling with content.
+    /// The detail column: the tab strip, then the terminal beside whatever
+    /// panel is open, with the status bar pinned underneath the lot.
+    /// `safeAreaInset` rather than another `VStack` row so the terminal
+    /// keeps thinking it owns the full height and the bar never scrolls
+    /// away with content.
     private var detailColumn: some View {
-        Group {
-            if sessionManager.openSessions.isEmpty {
-                emptyState
-            } else {
-                TabView(selection: $sessionManager.activeSessionID) {
-                    ForEach(sessionManager.openSessions) { session in
-                        SessionTabView(session: session)
-                            .tag(Optional(session.id))
-                            .tabItem { Text(session.title) }
-                    }
+        VStack(spacing: 0) {
+            if !sessionManager.openSessions.isEmpty {
+                SessionTabBar()
+            }
+            HSplitView {
+                sessionArea
+                if let panel = activePanel {
+                    panelColumn(panel)
                 }
             }
         }
@@ -112,6 +116,72 @@ struct ContentView: View {
         // is better than gluing the host onto the name with a dash.
         .navigationTitle(sessionManager.activeSession?.title ?? "MobaMac")
         .navigationSubtitle(windowSubtitle)
+    }
+
+    /// Every open tab is built and kept in the hierarchy, with the inactive
+    /// ones faded out rather than removed. That is not decoration: each tab's
+    /// terminal is an AppKit `NSView` owning its own scrollback, so dropping
+    /// it from the view tree on a tab switch would throw away everything the
+    /// session has printed. `TabView` did this for us; drawing the tab strip
+    /// by hand means doing it here.
+    private var sessionArea: some View {
+        Group {
+            if sessionManager.openSessions.isEmpty {
+                emptyState
+            } else {
+                ZStack {
+                    ForEach(sessionManager.openSessions) { session in
+                        let isActive = session.id == sessionManager.activeSessionID
+                        SessionTabView(session: session)
+                            .opacity(isActive ? 1 : 0)
+                            .allowsHitTesting(isActive)
+                            .zIndex(isActive ? 1 : 0)
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+        // Keyboard focus does not follow opacity: without this, switching
+        // tabs leaves the first responder on the terminal that just became
+        // invisible, and typing goes into a tab nobody can see.
+        .onChange(of: sessionManager.activeSessionID) { _, newValue in
+            guard
+                let session = sessionManager.openSessions.first(where: { $0.id == newValue }),
+                let view = session.terminalView
+            else { return }
+            DispatchQueue.main.async {
+                view.window?.makeFirstResponder(view)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func panelColumn(_ panel: DetailPanel) -> some View {
+        SidePanelContainer(
+            title: panel.title,
+            icon: panel.icon,
+            isMinimized: $panelMinimized,
+            onClose: { activePanel = nil }
+        ) {
+            switch panel {
+            case .networkTools:
+                NetworkToolsView()
+                    .environmentObject(networkTools)
+            }
+        }
+    }
+
+    /// Clicking the toolbar button for the panel that is already open closes
+    /// it, which is what a toggle in a toolbar is expected to do. Opening a
+    /// panel always un-minimizes: asking for a panel and getting a 32pt
+    /// strip would read as the button not working.
+    private func toggle(_ panel: DetailPanel) {
+        if activePanel == panel {
+            activePanel = nil
+        } else {
+            activePanel = panel
+            panelMinimized = false
+        }
     }
 
     private var windowSubtitle: String {
@@ -157,7 +227,7 @@ struct ContentView: View {
             }
 
             Button {
-                showingNetworkTools = true
+                toggle(.networkTools)
             } label: {
                 Label("Network Tools", systemImage: "network")
             }

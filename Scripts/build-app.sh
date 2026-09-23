@@ -69,7 +69,7 @@ cat > "$BUNDLE_DIR/Contents/Info.plist" << EOF
     <key>CFBundleShortVersionString</key>
     <string>1.15</string>
     <key>CFBundleVersion</key>
-    <string>16</string>
+    <string>17</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
