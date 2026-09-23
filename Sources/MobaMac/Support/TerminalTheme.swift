@@ -159,7 +159,7 @@ extension TerminalView {
 
     /// UI spec's chosen terminal font stack: `'Courier New', Consolas,
     /// 'DejaVu Sans Mono', monospace` — a classic dense monospace look,
-    /// matching MobaXterm's default rather than the app chrome's font.
+    /// a terminal font rather than the app chrome's font.
     /// That's a CSS font stack, not an AppKit one: only "Courier New" of
     /// those three actually ships with macOS, so it's tried first and
     /// everything else falls back to the system monospaced font (confirmed

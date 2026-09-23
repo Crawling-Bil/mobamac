@@ -29,7 +29,7 @@ private struct StatusDot: View {
 
     private var helpText: String {
         switch state {
-        case .idle: return "Idle. Saved, not currently connected."
+        case .idle: return "Not connected."
         case .connecting: return "Connecting…"
         case .connected: return "Connected."
         case .failed: return "Last connection attempt failed."
@@ -277,7 +277,7 @@ struct SidebarView: View {
             } label: {
                 Label("Add", systemImage: "plus")
             }
-            .help("Save a new session profile, create a folder to organize into ahead of time, or manage existing folders.")
+            .help("Add a session or folder, or manage existing folders.")
         }
     }
 

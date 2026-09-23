@@ -1,7 +1,8 @@
 import AppKit
 import SwiftTerm
 
-/// Two habits carried over from MobaXterm and PuTTY. Both off by default,
+/// Two optional mouse behaviours familiar from other terminal clients.
+/// Both off by default,
 /// because both contradict how every other Mac app behaves and finding your
 /// clipboard replaced by a stray drag is a nasty surprise if you didn't ask
 /// for it.

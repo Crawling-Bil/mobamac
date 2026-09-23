@@ -15,6 +15,12 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   connected. It says how many, and offers to install anyway or wait --
   waiting installs it the next time MobaMac is quit.
 - Settings shows when updates were last checked for.
+- Wording across the app is consistent: one term per concept, no
+  references to other products, and plainer descriptions in tooltips and
+  error messages. The Macros menu is now Snippets, matching the panel it
+  has always drawn from.
+- The serial console hint was wrong about Aruba. CX switches default to
+  115200, not 9600.
 
 ## 1.16
 

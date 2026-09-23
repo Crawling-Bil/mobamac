@@ -1,6 +1,6 @@
 # MobaMac
 
-A native macOS SSH/terminal client, a MobaXterm-style alternative built for Mac.
+A native macOS terminal for network engineers. SSH, Telnet, and serial console sessions organized by customer, with automatic session logging.
 
 <img width="1680" height="1050" alt="image" src="https://github.com/user-attachments/assets/305441ce-af4d-45a1-b889-0e4d92173d9d" />
 <img width="541" height="369" alt="image" src="https://github.com/user-attachments/assets/c799814f-99a7-4583-b517-d5670f473438" />
@@ -23,7 +23,7 @@ Grab the latest build from the [Releases page](https://github.com/Crawling-Bil/m
 - Sidebar organizes sessions into Customer → Device Type folders
 - Multiple tabs at once, with a live connection status dot per session
 - Broadcast keystrokes to several SSH sessions at the same time
-- Color themes, saved macros, quick connect, and a command palette (⌘K)
+- Color themes, saved snippets, quick connect, and a command palette (⌘K)
 - Auto-reconnect, credential sets for reusing logins across devices
 - Session logs in plain text: no color codes or cursor movement, so a log can go straight into a report
 - Network tools, SFTP and snippets as a resizable side panel, not a modal sheet
@@ -55,10 +55,10 @@ turns the daily check off.
 its own color theme either way), whether to confirm before closing a session
 that is still connected, and the update options.
 
-**Terminal** holds two habits carried over from MobaXterm and PuTTY, both off
-by default because they contradict how other Mac apps behave: *Copy on
-select*, and *Right-click pastes* (Control-click still opens the context
-menu, and a multi-line paste still asks first).
+**Terminal** holds two optional mouse behaviours, both off by default because
+they differ from standard macOS behaviour: *Copy on select*, and *Right-click
+pastes* (Control-click still opens the context menu, and a multi-line paste
+still asks for confirmation).
 
 **Logging** is where the log folder lives, along with *Keep raw session logs*
 — a `.raw` file beside each `.log` holding the unfiltered bytes, for when the
@@ -78,14 +78,14 @@ logs.
 | ⌘K | Command palette |
 | ⌘R | Reconnect, on a tab that dropped or failed |
 | ⌘+ / ⌘- / ⌘0 | Zoom in / out / actual size, across every tab |
-| ⌥⌘*key* | Run a macro, with the key set per snippet |
+| ⌥⌘*key* | Run a snippet, with the key assigned per snippet |
 | ⌘F | Search saved sessions in the sidebar |
 | ⌘C / ⌘V | Copy / paste, with a confirmation for multi-line pastes |
 | ⌘, | Settings |
 | ⌘Q | Quit, confirming if sessions are still connected |
 
-Macros keep ⌥⌘, so tab switching could take the ⌘1 – ⌘9 row that macOS
-apps normally use for it. Nothing changed meaning.
+Snippets keep ⌥⌘, so tab switching could take the ⌘1 – ⌘9 row that macOS
+apps normally use for it. No existing shortcut changed meaning.
 
 ## Building from source
 

@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Toolbar-accessible panel for MobaXterm-style "macros" — saved commands
-/// fired into the active session with one click instead of retyping or
-/// hunting through shell history. A snippet with a keyboard shortcut set
-/// can also be fired without opening this panel at all — see the "Macros"
-/// menu MobaMacApp builds from the same SnippetStore.
+/// Toolbar-accessible panel for snippets: saved commands sent to the active
+/// session with one click instead of being retyped or hunted out of shell
+/// history. A snippet with a keyboard shortcut can also be run without
+/// opening this panel at all, from the "Snippets" menu MobaMacApp builds
+/// from the same SnippetStore.
 struct SnippetsPanelView: View {
     @EnvironmentObject var snippetStore: SnippetStore
     @EnvironmentObject var sessionManager: SessionManager
@@ -12,10 +12,10 @@ struct SnippetsPanelView: View {
 
     @State private var editingSnippet: Snippet?
     @State private var showingNewSnippet = false
-    /// Set instead of deleting immediately when the target macro is more
-    /// than one line (UI spec §10) — a one-line macro deletes straight away
-    /// since confirming that is friction for no benefit, but losing a
-    /// multi-line macro (someone's saved config block, say) deserves a
+    /// Set instead of deleting immediately when the target snippet is more
+    /// than one line (UI spec §10). A one-line snippet deletes without
+    /// asking, since confirming that is friction for no benefit, but losing
+    /// a multi-line snippet, a saved config block for instance, deserves a
     /// speed bump.
     @State private var snippetPendingDelete: Snippet?
 
@@ -37,7 +37,7 @@ struct SnippetsPanelView: View {
             if snippetStore.snippets.isEmpty {
                 VStack(spacing: 8) {
                     Text("No snippets yet").font(.headline)
-                    Text("Save a command you run often and fire it into the active session with one click.")
+                    Text("Save commands you run often and send them to the active session with one click.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -70,7 +70,7 @@ struct SnippetsPanelView: View {
                                 sessionManager.sendToActive(snippet.command + "\n")
                             }
                             .disabled(sessionManager.activeSession == nil)
-                            .help("Run this macro in the active session.")
+                            .help("Run this snippet in the active session.")
 
                             // Standalone icon-only delete, alongside the
                             // context-menu entry and swipe-to-delete below —
@@ -83,7 +83,7 @@ struct SnippetsPanelView: View {
                                 Image(systemName: "trash")
                             }
                             .buttonStyle(.borderless)
-                            .help("Delete this macro.")
+                            .help("Delete this snippet.")
                         }
                         .contextMenu {
                             Button {
@@ -125,11 +125,11 @@ struct SnippetsPanelView: View {
                 snippetPendingDelete = nil
             }
         } message: { _ in
-            Text("This macro has more than one line. This can't be undone.")
+            Text("This snippet contains multiple lines. This can't be undone.")
         }
     }
 
-    /// One-line macros delete immediately; anything longer routes through
+    /// One-line snippets delete immediately; anything longer routes through
     /// the confirmation dialog above (UI spec §10).
     private func requestDelete(_ snippet: Snippet) {
         if isMultiLine(snippet) {
@@ -202,14 +202,17 @@ private struct SnippetEditSheet: View {
                     }
                 }
             Text(shortcutKey.isEmpty
-                 ? "Set a letter or digit to fire this snippet with ⌥⌘ + that key from anywhere in the app, no need to open this panel."
-                 : "Fires with ⌥⌘\(shortcutKey) from anywhere in the app, including while a terminal is focused.")
+                 ? "Assign a letter or digit to run this snippet with ⌥⌘ and that key from anywhere in the app."
+                 : "Runs with ⌥⌘\(shortcutKey) from anywhere in the app, including while a terminal is focused.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let duplicateShortcutName {
-                Text("⚠️ \"\(duplicateShortcutName)\" already uses ⌥⌘\(shortcutKey). Only one of them will actually fire.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                Label(
+                    "\"\(duplicateShortcutName)\" already uses ⌥⌘\(shortcutKey). Only one of them will run.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
 
             HStack {

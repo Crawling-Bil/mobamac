@@ -4,7 +4,7 @@ import Foundation
 /// what you would have read on screen, with everything a terminal emulator
 /// consumes rather than prints taken back out.
 ///
-/// A session log is a document. Network gear colors its prompt, redraws the
+/// A session log is a document. Network devices color the prompt, redraw the
 /// line as you type, and paints progress with carriage returns — all of which
 /// belong on screen and none of which belong in something you paste into a
 /// report. A byte-for-byte log of "show running-config" from a device with a

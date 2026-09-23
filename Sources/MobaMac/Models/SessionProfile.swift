@@ -18,7 +18,7 @@ enum SessionKind: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// A saved connection profile — roughly a MobaXterm "session".
+/// A saved connection profile: one device, and how to reach it.
 /// Secrets (password, key passphrase) live in the Keychain, keyed by `id`,
 /// never in this struct or the JSON file it's persisted in.
 ///

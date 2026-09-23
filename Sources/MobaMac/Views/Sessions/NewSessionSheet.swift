@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Fixed, extendable device-type list for the New Session form's Device
-/// Type dropdown (UI spec §5). Add cases here as new gear types come up —
+/// Type dropdown (UI spec §5). Add cases here as new device types come up:
 /// the raw value is what actually gets stored as the device-type
 /// `SessionGroup`'s name, so keep raw values human-readable.
 enum DeviceTypeOption: String, CaseIterable, Identifiable {
@@ -175,7 +175,7 @@ struct NewSessionSheet: View {
                         Text(set.name).tag(Optional(set.id))
                     }
                 }
-                .help("Reuse a saved username and login across many profiles instead of typing one in below. Update it once here and every profile using it picks up the change.")
+                .help("Use a saved credential set instead of entering credentials below. Changes to the set apply to every session that uses it.")
 
                 if credentialSetID == nil {
                     TextField("Username", text: $username)
@@ -221,14 +221,14 @@ struct NewSessionSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                .help("Sends a harmless keystroke once the session has been idle this long, so the device's own idle timeout doesn't drop the connection. Some hardened environments log this as activity, so set it to 0 there.")
+                .help("Sends a keepalive after this many seconds of inactivity so the device's idle timeout doesn't close the session. Set to 0 to disable, for example where keepalives are logged as user activity.")
 
                 Toggle("Auto-reconnect", isOn: $autoReconnect)
-                    .help("Automatically retry every 15s (up to 20 attempts) if this session disconnects. Off by default, because retrying into a device mid-reboot can catch it half-booted.")
+                    .help("Retries every 15 seconds, up to 20 attempts, if the session disconnects. Off by default, because reconnecting during a reboot can reach the device before it has fully started.")
             }
 
             if kind == .telnet {
-                Text("Telnet sends everything, passwords included, in plain text. Only use it for legacy gear that doesn't support SSH.")
+                Text("Telnet sends all data, including passwords, unencrypted. Use it only for legacy devices that don't support SSH.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -256,7 +256,7 @@ struct NewSessionSheet: View {
                         Text("\(rate)").tag(rate)
                     }
                 }
-                Text("9600 is the standard console speed for most Cisco, Palo Alto, Fortinet, and Aruba gear.")
+                Text("Most Cisco, Palo Alto, and Fortinet consoles use 9600. Aruba CX switches use 115200.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -299,7 +299,7 @@ struct NewSessionSheet: View {
     /// Icon-button row from the UI spec: SSH and Local are real, one-tap
     /// protocol choices; Serial and RDP are shown but visually disabled —
     /// a deliberate roadmap hint (Serial is actually implemented already,
-    /// reachable via the "Type" picker below; RDP is Phase 6 and doesn't
+    /// reachable via the "Type" picker below; RDP is not implemented and doesn't
     /// exist as a SessionKind yet at all), not an oversight.
     private var protocolPickerRow: some View {
         HStack(spacing: 10) {
@@ -326,7 +326,7 @@ struct NewSessionSheet: View {
         .buttonStyle(.bordered)
         .disabled(!enabled)
         .opacity(enabled ? 1.0 : 0.4)
-        .help(enabled ? "Use \(label)" : "\(label) is coming in a later phase.")
+        .help(enabled ? "Use \(label)" : "\(label) is not available yet.")
     }
 
     /// Resolves a previously-saved profile's group back into Customer/Device

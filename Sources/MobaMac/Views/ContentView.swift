@@ -89,7 +89,7 @@ struct ContentView: View {
                 } label: {
                     Label("Quick Connect", systemImage: "bolt")
                 }
-                .help("Connect to a host right now without saving a session profile.")
+                .help("Connect to a host without saving a session.")
             }
 
             ToolbarItem(id: "panels", placement: .automatic) {
@@ -413,7 +413,7 @@ private struct HighlightToggleButton: View {
 
     var body: some View {
         Toggle("Highlight Output", isOn: $session.highlightingEnabled)
-            .help("Buffers output per line to highlight IPs, MAC addresses, and status/errors. Adds latency (including your own typed echo) until Enter is pressed, which is why it's off by default per session.")
+            .help("Highlights IP addresses, MAC addresses, and errors in the output. Output is shown one line at a time, so typing may feel delayed while this is on.")
     }
 }
 

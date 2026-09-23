@@ -2,7 +2,7 @@ import Foundation
 
 /// Minimal unsigned arbitrary-precision integer, built only for what SSH-1's
 /// RSA session-key encryption needs: construct from/to big-endian bytes, and
-/// modular exponentiation. RSA *encryption* (never decryption -- this client
+/// modular exponentiation. RSA *encryption* (never decryption, this client
 /// only ever uses the server's and host's *public* keys) always uses a small
 /// exponent (65537 or 3), so `modPow` doesn't need to be fast for huge
 /// exponents, just correct for a handful of squarings. Not a general-purpose
@@ -22,8 +22,8 @@ struct SSH1BigUInt: Equatable, Comparable {
         self.limbs = [value]
     }
 
-    /// Parses a big-endian byte string -- an mpint's value bytes, or a raw
-    /// RSA modulus/exponent -- into a bignum.
+    /// Parses a big-endian byte string, an mpint's value bytes, or a raw
+    /// RSA modulus/exponent, into a bignum.
     init(bigEndianBytes bytes: [UInt8]) {
         var limbs: [UInt32] = []
         var chunk: UInt32 = 0
@@ -53,7 +53,7 @@ struct SSH1BigUInt: Equatable, Comparable {
 
     var isZero: Bool { limbs.count == 1 && limbs[0] == 0 }
 
-    /// Number of significant bits (0 for zero) -- an SSH-1 mpint's length
+    /// Number of significant bits (0 for zero), an SSH-1 mpint's length
     /// prefix is a *bit* count, not a byte count, so this is needed as-is,
     /// not just for sizing byte buffers.
     var bitWidth: Int { Self.bitWidth(of: limbs) }
@@ -90,7 +90,7 @@ struct SSH1BigUInt: Equatable, Comparable {
 
     // MARK: - Internal limb-array arithmetic (used by modPow's inner loop,
     // where wrapping every intermediate value back into an SSH1BigUInt --
-    // and paying for normalize() -- would be wasted work).
+    // and paying for normalize(), would be wasted work).
 
     private static func trimmed(_ limbs: [UInt32]) -> [UInt32] {
         var l = limbs
@@ -192,7 +192,7 @@ struct SSH1BigUInt: Equatable, Comparable {
     }
 
     /// a mod m, via binary shift-and-subtract long division. O(bits(a) *
-    /// bits(m)/32) -- fine for the sizes and call counts RSA public-key
+    /// bits(m)/32), fine for the sizes and call counts RSA public-key
     /// operations need here (a couple of ~2048-bit reductions per squaring,
     /// a few dozen squarings total per connection).
     private static func mod(_ a: [UInt32], _ m: [UInt32]) -> [UInt32] {

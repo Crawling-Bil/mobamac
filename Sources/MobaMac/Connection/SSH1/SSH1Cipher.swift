@@ -4,8 +4,8 @@ import CCommonCrypto
 /// Which SSH-1 bulk-data cipher was negotiated for this session. SSH-1
 /// advertises a *bitmask* of ciphers a server supports (see
 /// `SSH1PublicKeyPacket`); MobaMac only implements the two most commonly
-/// offered by real legacy network gear. Blowfish/RC4/IDEA aren't
-/// implemented -- if a device only offers those, the connection fails with
+/// offered by real legacy network devices. Blowfish/RC4/IDEA aren't
+/// implemented, if a device only offers those, the connection fails with
 /// a clear "no supported cipher" error rather than silently doing nothing.
 enum SSH1CipherType: UInt8 {
     case none = 0
@@ -14,7 +14,7 @@ enum SSH1CipherType: UInt8 {
 }
 
 /// SSH-1 bulk-data encryption. Two independent chaining states are needed --
-/// one for the data this client sends, one for what it receives -- because
+/// one for the data this client sends, one for what it receives, because
 /// SSH-1 doesn't reset the CBC IV per packet the way most modern framings
 /// do: encryption for a whole direction is one continuous CBC stream from
 /// the moment the session key takes effect until the connection closes. So
@@ -29,7 +29,7 @@ enum SSH1CipherType: UInt8 {
 ///    keys sliced from the 32-byte session key (bytes 0..<8, 8..<16,
 ///    16..<24). Each pass keeps its own CBC chain starting at an all-zero
 ///    IV. Data is DES-encrypted with key 1, DES-*decrypted* with key 2,
-///    then DES-encrypted again with key 3 -- the classic encrypt/decrypt/
+///    then DES-encrypted again with key 3, the classic encrypt/decrypt/
 ///    encrypt (EDE) arrangement, just done as three full CBC passes rather
 ///    than interleaved block-by-block.
 final class SSH1Cipher {
@@ -55,7 +55,7 @@ final class SSH1Cipher {
         }
     }
 
-    /// Encrypts `data` (length must be a multiple of 8 bytes -- SSH-1's own
+    /// Encrypts `data` (length must be a multiple of 8 bytes, SSH-1's own
     /// packet padding guarantees this), continuing this instance's chain.
     func encrypt(_ data: [UInt8]) -> [UInt8] {
         switch type {
@@ -79,7 +79,7 @@ final class SSH1Cipher {
 
     /// Decrypts `data` (must be a multiple of 8 bytes), continuing this
     /// instance's chain. Must be called with bytes in the exact order they
-    /// arrived on the wire -- the CBC chain depends on it.
+    /// arrived on the wire, the CBC chain depends on it.
     func decrypt(_ data: [UInt8]) -> [UInt8] {
         switch type {
         case .none:
@@ -103,7 +103,7 @@ final class SSH1Cipher {
         }
     }
 
-    /// One raw DES-CBC pass via CommonCrypto (no padding -- callers always
+    /// One raw DES-CBC pass via CommonCrypto (no padding, callers always
     /// supply already block-aligned data). Returns the transformed bytes
     /// plus the IV the *next* call in this chain should use: for
     /// encryption that's the last output ciphertext block; for decryption

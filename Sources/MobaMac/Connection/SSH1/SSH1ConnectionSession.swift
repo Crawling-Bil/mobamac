@@ -6,19 +6,19 @@ import Security
 /// A from-scratch SSH-1 client, used only as an automatic fallback when a
 /// device's SSH server is old enough that `SSHConnectionSession` (Citadel,
 /// SSH-2 only) fails with `NIOSSHError.unsupportedVersion`. SSH-1 was
-/// deprecated industry-wide decades ago -- swift-nio-ssh and every other
-/// modern SSH library intentionally refuses to speak it -- but some real
-/// network gear MobaMac's users hit (old Cisco/PA units, terminal servers)
+/// deprecated industry-wide decades ago, swift-nio-ssh and every other
+/// modern SSH library intentionally refuses to speak it, but some real
+/// network devices MobaMac's users hit (old Cisco/PA units, terminal servers)
 /// genuinely has no SSH-2 option, so this exists purely to still let those
 /// devices be reached, not as an endorsement of the protocol.
 ///
 /// Scope, deliberately narrow:
-///  - Password authentication only. No RSA/rhosts SSH-1 auth -- if a
+///  - Password authentication only. No RSA/rhosts SSH-1 auth, if a
 ///    profile is set to key-based auth, `SessionManager` shouldn't route it
 ///    here at all (see the fallback wiring in SessionManager.swift).
 ///  - Ciphers: DES and SSH-1's own "3des" (three chained single-DES-CBC
-///    passes -- see `SSH1Cipher`), the two most commonly offered by legacy
-///    gear. Blowfish/RC4/IDEA aren't implemented; a device offering only
+///    passes, see `SSH1Cipher`), the two most commonly offered by legacy
+///    devices. Blowfish/RC4/IDEA aren't implemented; a device offering only
 ///    those fails cleanly with `SSH1Error.noSupportedCipher`.
 ///  - No SSH-1 agent forwarding, X11 forwarding, or port forwarding --
 ///    just an interactive shell, which is all a terminal tab needs.
@@ -77,7 +77,7 @@ final class SSH1ConnectionSession: ConnectionSession {
             case .authenticationFailed:
                 return "The device rejected the SSH-1 username/password."
             case .missingCredentials:
-                return "No password is available for this SSH-1 connection -- SSH-1 fallback only supports password authentication."
+                return "No password is available for this SSH-1 connection. SSH-1 only supports password authentication in MobaMac."
             }
         }
     }
@@ -150,7 +150,7 @@ final class SSH1ConnectionSession: ConnectionSession {
         try await writePacket(type: SSH1MessageType.sessionKey.rawValue, data: sessionKeyPacket)
 
         // Every packet from here on, in both directions, is encrypted
-        // continuously with the real (un-XORed) session key -- see
+        // continuously with the real (un-XORed) session key, see
         // SSH1Cipher's doc comment for why two independent instances.
         outgoingCipher = SSH1Cipher(type: cipherType, sessionKey: realSessionKey)
         incomingCipher = SSH1Cipher(type: cipherType, sessionKey: realSessionKey)
@@ -158,7 +158,7 @@ final class SSH1ConnectionSession: ConnectionSession {
         try await writePacket(type: SSH1MessageType.user.rawValue, data: Self.encodeString(Array(username.utf8)))
         let (userReplyType, _) = try await readPacket()
         if userReplyType == SSH1MessageType.success.rawValue {
-            // No further authentication required -- unusual, but valid.
+            // No further authentication required, unusual, but valid.
         } else if userReplyType == SSH1MessageType.failure.rawValue {
             try await writePacket(type: SSH1MessageType.authPassword.rawValue, data: Self.encodeString(Array(password.utf8)))
             let (passwordReplyType, _) = try await readPacket()
@@ -174,13 +174,13 @@ final class SSH1ConnectionSession: ConnectionSession {
         ptyPayload.append(contentsOf: Self.encodeUInt32(80)) // cols
         ptyPayload.append(contentsOf: Self.encodeUInt32(0))  // pixel width
         ptyPayload.append(contentsOf: Self.encodeUInt32(0))  // pixel height
-        ptyPayload.append(0) // TTY_OP_END -- no explicit terminal modes requested
+        ptyPayload.append(0) // TTY_OP_END, no explicit terminal modes requested
         try await writePacket(type: SSH1MessageType.requestPTY.rawValue, data: ptyPayload)
         let (ptyReplyType, _) = try await readPacket()
         if ptyReplyType != SSH1MessageType.success.rawValue && ptyReplyType != SSH1MessageType.failure.rawValue {
             throw SSH1Error.protocolError("Unexpected reply to SSH_CMSG_REQUEST_PTY: message type \(ptyReplyType).")
         }
-        // A FAILURE reply here isn't treated as fatal -- some old servers
+        // A FAILURE reply here isn't treated as fatal, some old servers
         // reject PTY parameters they don't like but still grant a shell.
 
         try await writePacket(type: SSH1MessageType.execShell.rawValue, data: [])
@@ -388,7 +388,7 @@ final class SSH1ConnectionSession: ConnectionSession {
     // bytes, padding_length = 8 - (packet_length % 8)) + 1-byte type + data
     // + 4-byte CRC-32 of (padding+type+data). Once the session key packet
     // has been sent, (padding+type+data+crc) as a whole is what gets
-    // encrypted/decrypted -- see SSH1Cipher.
+    // encrypted/decrypted, see SSH1Cipher.
 
     private func readPacket() async throws -> (type: UInt8, payload: [UInt8]) {
         let lengthBytes = try await receiveExactly(4)
@@ -411,7 +411,7 @@ final class SSH1ConnectionSession: ConnectionSession {
         let expectedCRC = SSH1CRC32.checksumBytes(Array(blob[0..<coveredLength]))
         let receivedCRC = Array(blob[coveredLength..<(coveredLength + 4)])
         guard receivedCRC == expectedCRC else {
-            throw SSH1Error.protocolError("SSH-1 packet CRC mismatch -- the session is desynchronized (wrong cipher key, or corrupted stream).")
+            throw SSH1Error.protocolError("SSH-1 packet CRC mismatch, the session is desynchronized (wrong cipher key, or corrupted stream).")
         }
 
         return (type, data)
@@ -539,7 +539,7 @@ final class SSH1ConnectionSession: ConnectionSession {
         return bytes
     }
 
-    /// PKCS#1 v1.5 type-2 (encryption) padding -- this is exactly the
+    /// PKCS#1 v1.5 type-2 (encryption) padding, this is exactly the
     /// padding scheme the historical SSH-1 spec defines for its session-key
     /// RSA encryption: 0x00 0x02 <random non-zero bytes> 0x00 <message>,
     /// total length equal to the modulus's byte length.

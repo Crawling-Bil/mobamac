@@ -51,7 +51,7 @@ private struct GeneralPreferencesView: View {
                 .onChange(of: confirmClose) { _, newValue in
                     CloseConfirmationSettings.isEnabled = newValue
                 }
-            Text("Ticking \"Don't ask again\" in that dialog turns this off. This is where to turn it back on.")
+            Text("Selecting \"Don't ask again\" in the confirmation dialog turns this off. Turn it back on here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -99,7 +99,7 @@ private struct TerminalPreferencesView: View {
                 .onChange(of: copyOnSelect) { _, newValue in
                     TerminalBehaviorSettings.copyOnSelect = newValue
                 }
-            Text("Selecting text in the terminal puts it on the clipboard straight away, the way MobaXterm and PuTTY do. A click with nothing selected leaves the clipboard alone.")
+            Text("Selecting text in the terminal copies it to the clipboard immediately. Clicking without a selection leaves the clipboard unchanged.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

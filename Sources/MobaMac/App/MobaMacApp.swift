@@ -111,7 +111,7 @@ struct MobaMacApp: App {
         // focus — including the terminal's own NSView — because AppKit
         // checks menu key equivalents before handing a keystroke to the
         // first responder. That's what makes "press a hotkey, no click
-        // needed" actually work for both macros and the command palette.
+        // needed" actually work for both snippets and the command palette.
         .commands {
             // Right under "About MobaMac", which is where macOS apps have
             // put this for twenty years. Sparkle owns everything after the
@@ -149,7 +149,7 @@ struct MobaMacApp: App {
                 .keyboardShortcut("w", modifiers: .command)
                 .disabled(sessionManager.activeSession == nil)
             }
-            CommandMenu("Macros") {
+            CommandMenu("Snippets") {
                 if snippetStore.snippets.isEmpty {
                     Text("No snippets saved yet")
                 } else {
@@ -238,7 +238,7 @@ struct MobaMacApp: App {
 
 private extension View {
     /// Applies ⌥⌘<key> when a snippet has a shortcut set; otherwise leaves
-    /// the item shortcut-less (it's still reachable from the Macros menu
+    /// the item shortcut-less (it's still reachable from the Snippets menu
     /// by name).
     @ViewBuilder
     func keyboardShortcut(forKey key: String?) -> some View {

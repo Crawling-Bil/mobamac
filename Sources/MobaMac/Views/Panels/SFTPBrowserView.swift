@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Graphical SFTP browser, opened over an already-connected SSH session
-/// (same idea as MobaXterm's sidebar SFTP panel, here as a sheet instead).
+/// (file transfer over the session's existing SSH connection).
 struct SFTPBrowserView: View {
     let ssh: SSHConnectionSession
 

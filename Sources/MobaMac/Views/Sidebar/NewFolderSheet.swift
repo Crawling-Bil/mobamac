@@ -58,7 +58,7 @@ struct NewFolderSheet: View {
                 }
             }
 
-            Text("Sessions saved later with this Customer (and Device Type) will land in this folder automatically. This just lets you lay it out ahead of time.")
+            Text("Sessions saved with this customer and device type are placed in this folder automatically.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

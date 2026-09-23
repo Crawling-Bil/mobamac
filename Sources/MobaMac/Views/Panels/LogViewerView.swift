@@ -79,7 +79,7 @@ struct LogViewerView: View {
         }
     }
 
-    /// UI spec §9.5: how long session logs stick around before being
+    /// UI spec §9.5: how long session logs are kept before being
     /// auto-deleted. Picking a shorter window purges immediately (not just
     /// "starting from your next launch") so the setting visibly does
     /// something the moment you change it, and the list refreshes to match.
@@ -99,7 +99,7 @@ struct LogViewerView: View {
         } label: {
             Label("Keep logs for \(retentionLabel(for: retentionDays))", systemImage: "clock.arrow.circlepath")
         }
-        .help("How long session logs stick around before MobaMac deletes them automatically. \"Forever\" turns off automatic cleanup entirely.")
+        .help("How long session logs are kept before MobaMac deletes them. Choose \"Forever\" to disable automatic cleanup.")
     }
 
     private func retentionLabel(for days: Int) -> String {

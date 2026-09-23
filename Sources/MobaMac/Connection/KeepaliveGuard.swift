@@ -4,7 +4,7 @@ import Foundation
 /// is safe to send.
 ///
 /// A newline is indistinguishable from the user pressing Enter, and network
-/// gear confirms destructive commands with Enter: Cisco's
+/// devices confirm destructive commands with Enter: Cisco's
 /// "Proceed with reload? [confirm]", "write erase", "delete flash:...".
 /// Sending one blindly after 30 idle seconds could reload a switch while
 /// its user was away from the desk. So a keepalive only goes out when all

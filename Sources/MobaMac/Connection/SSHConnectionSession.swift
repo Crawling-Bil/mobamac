@@ -27,7 +27,7 @@ final class SSHConnectionSession: ConnectionSession {
     /// it after the closure that created it has returned control to us.
     private var stdinWriter: TTYStdinWriter?
 
-    /// UI spec §9.1: network gear's idle `exec-timeout` (commonly 5 to 10
+    /// UI spec §9.1: a device's idle `exec-timeout` (commonly 5 to 10
     /// minutes) drops a session that's just sitting there while someone
     /// reads a doc. After the configured idle interval `keepaliveTask`
     /// types a single newline. It has to be real input: exec-timeout
@@ -81,7 +81,7 @@ final class SSHConnectionSession: ConnectionSession {
             )
         )
         // Plain `SSHAlgorithms()` only offers the host key types NIOSSH
-        // bundles (ed25519, ECDSA). A lot of network gear only has an RSA
+        // bundles (ed25519, ECDSA). A lot of network devices only have an RSA
         // host key, the Cisco switches MobaMac targets included, and against
         // those the key exchange fails with no algorithm in common. `.all`
         // registers Citadel's ssh-rsa host key support plus aes128-ctr and
@@ -276,7 +276,7 @@ final class SSHConnectionSession: ConnectionSession {
                     ? "Couldn't decrypt this private key. Double-check the passphrase."
                     : "This private key appears to be passphrase-protected. Enter its passphrase in the session's Key Passphrase field and try again."
             case .agentAuthNotYetImplemented:
-                return "SSH agent authentication isn't implemented yet. Use password or private key auth instead."
+                return "SSH agent authentication isn't supported yet. Use a password or private key instead."
             case .notConnected:
                 return "Not connected."
             case .hostKeyMismatch(let previousFingerprint, let newFingerprint):
@@ -293,7 +293,7 @@ final class SSHConnectionSession: ConnectionSession {
 /// the type has no custom `CustomNSError` conformance. The real
 /// diagnostic lives in `.type`/`.description`, which this maps into
 /// something the user can act on — especially the handshake-level
-/// failures that show up when talking to network gear (routers,
+/// failures that show up when talking to network devices (routers,
 /// switches, firewalls) that only offers legacy/weak SSH algorithms
 /// this library intentionally refuses to use.
 extension NIOSSHError {
@@ -302,17 +302,19 @@ extension NIOSSHError {
         case .weakSharedSecret:
             return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group, which is common on older routers, switches and firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
         case .keyExchangeNegotiationFailure:
-            return "This device and MobaMac have no SSH algorithm in common. Either side can be the cause: very old gear may only offer algorithms this app refuses (such as diffie-hellman-group1-sha1), while hardened gear may offer only RSA host keys signed with rsa-sha2-256/512, which MobaMac can't verify yet (it supports RSA host keys only as ssh-rsa). \"ssh -vv <user>@<host>\" from Terminal prints the device's offered lists under \"peer server KEXINIT proposal\"."
+            return "This device and MobaMac have no SSH algorithm in common. Either side can be the cause: older devices may only offer algorithms this app refuses (such as diffie-hellman-group1-sha1), while hardened devices may offer only RSA host keys signed with rsa-sha2-256/512, which MobaMac can't verify yet (it supports RSA host keys only as ssh-rsa). \"ssh -vv <user>@<host>\" from Terminal prints the device's offered lists under \"peer server KEXINIT proposal\"."
         case .unsupportedVersion:
             if self.description.contains("SSH-1.99") {
-                // Unreachable in a normal build: Vendor/swift-nio-ssh accepts
-                // "1.99". Seeing this means the app was built against the
-                // unpatched remote library instead, so say exactly that.
-                return "This device reports SSH version 1.99 (SSH-2 with SSH-1 compatibility). MobaMac is meant to accept that, but this copy of the app was built without its patched SSH library (Vendor/swift-nio-ssh), so it was rejected. Rebuild from the full repository, or set \"ip ssh version 2\" on the device as a workaround."
+                // Unreachable in a normal build: the vendored SSH library
+                // accepts "1.99". Seeing this means the app was built against
+                // the unpatched upstream library instead. The message stays
+                // free of source paths, which mean nothing to whoever is
+                // looking at a failed connection.
+                return "This device reports SSH version 1.99. This build of MobaMac can't accept that version. Install the latest release, or run \"ip ssh version 2\" on the device as a workaround."
             }
-            return "This device's SSH version isn't supported (this app requires SSH-2.0). Very old gear that only speaks SSH-1 can't be used here."
+            return "This device's SSH version isn't supported (this app requires SSH-2.0). Devices that only support SSH-1 can't be used with this connection type."
         case .invalidHostKeyForKeyExchange, .invalidExchangeHashSignature:
-            return "The device's host key didn't match what was negotiated during the handshake. This can mean something between you and the device is intercepting the connection, or the device has a buggy SSH server."
+            return "The device's host key didn't match what was negotiated during the handshake. This can mean something between you and the device is intercepting the connection, or the device's SSH implementation is faulty."
         case .tcpShutdown:
             return "The connection closed unexpectedly during the SSH handshake. Check that nothing (a firewall, VPN, or the device itself) is dropping the connection partway through, and that the device is actually reachable on this network."
         case .invalidUserAuthSignature:

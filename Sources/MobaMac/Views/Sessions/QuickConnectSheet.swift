@@ -58,7 +58,7 @@ struct QuickConnectSheet: View {
                 Toggle("Save password", isOn: $savePassword)
                     .help("Store the password in the Keychain once it works, so reconnecting from Recent doesn't ask again.")
             } else {
-                Text("Telnet sends everything, passwords included, in plain text.")
+                Text("Telnet sends all data, including passwords, unencrypted.")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }

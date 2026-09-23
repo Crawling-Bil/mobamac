@@ -3,7 +3,7 @@ import Foundation
 /// The CRC-32 SSH-1 puts at the end of every packet (over `padding + type +
 /// data`, computed *before* encryption). This is the standard
 /// zlib/PKZip/Ethernet CRC-32 (polynomial 0xEDB88320, reflected, init
-/// 0xFFFFFFFF, final XOR 0xFFFFFFFF) -- SSH-1's RFC draft explicitly says to
+/// 0xFFFFFFFF, final XOR 0xFFFFFFFF), SSH-1's RFC draft explicitly says to
 /// use "the CRC-32 algorithm as used in Ethernet, gzip, etc.", not a
 /// bespoke variant, so this is a plain textbook table-driven implementation.
 enum SSH1CRC32 {

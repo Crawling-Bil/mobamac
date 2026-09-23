@@ -32,7 +32,7 @@ struct CredentialSetsView: View {
             if credentialSetStore.credentialSets.isEmpty {
                 VStack(spacing: 8) {
                     Text("No credential sets yet").font(.headline)
-                    Text("Save a username and login once, then reuse it across every session profile that logs in the same way.")
+                    Text("Save a username and password or key once, then reuse it across sessions that share the same login.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -158,7 +158,7 @@ private struct CredentialSetEditSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("Any session profile that picks this credential set will log in with this username and secret instead of its own, and stays in sync if you change it here.")
+            Text("Sessions using this credential set log in with these credentials. Changes here apply to all of them.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

@@ -82,7 +82,7 @@ final class OpenSession: ObservableObject, Identifiable {
     let lineBuffer = LineBuffer()
     /// Set by whichever host view (SSHTerminalHostView / RawTerminalHostView /
     /// LocalTerminalHostView) actually creates the SwiftTerm.TerminalView for
-    /// this tab, so snippets/macros can reach it — `TerminalView.send(txt:)`
+    /// this tab, so snippets can reach it. `TerminalView.send(txt:)`
     /// is the same public entry point a real keystroke goes through, so
     /// firing a snippet works uniformly across every session kind. Weak
     /// because the view owns its lifecycle, not this object.
@@ -157,7 +157,7 @@ final class SessionManager: ObservableObject {
     weak var credentialSetStore: CredentialSetStore?
 
     /// The set of open SSH tabs that currently share keystrokes with each
-    /// other (MobaXterm calls the underlying feature "multi-exec"). Replaces
+    /// other, sometimes called multi-exec. Replaces
     /// the old all-or-nothing `broadcastEnabled: Bool` — see the UI spec's
     /// broadcast-scoping section. Empty means broadcast is effectively off;
     /// a tab not in this set behaves normally even while other tabs are
@@ -166,7 +166,7 @@ final class SessionManager: ObservableObject {
 
     /// Toggled by the ⌘, menu-bar shortcut wired in MobaMacApp (same
     /// "menu key equivalents beat the first responder" trick already used
-    /// for macro shortcuts) — lives here rather than as local ContentView
+    /// for snippet shortcuts), lives here rather than as local ContentView
     /// state so a global keystroke can reach it without a screen tap first.
     @Published var showingCommandPalette: Bool = false
 
@@ -350,7 +350,7 @@ final class SessionManager: ObservableObject {
         return profile.host.isEmpty ? "its device" : profile.host
     }
 
-    /// Fires a snippet/macro at the active tab, whatever kind it is — SSH,
+    /// Sends a snippet to the active tab, whatever kind it is: SSH,
     /// Telnet, Serial or Local all end up feeding the same
     /// `TerminalView.send(txt:)` entry point a real keystroke would use, so
     /// there's no session-kind-specific plumbing needed here.
@@ -476,7 +476,7 @@ final class SessionManager: ObservableObject {
     }
 
     /// True when Citadel/swift-nio-ssh rejected the handshake specifically
-    /// because the device only offers SSH-1 -- the one case where retrying
+    /// because the device only offers SSH-1, the one case where retrying
     /// with `SSH1ConnectionSession` instead of just surfacing the error is
     /// worthwhile (every other NIOSSHError is a real failure that would
     /// fail the same way again).
@@ -499,7 +499,7 @@ final class SessionManager: ObservableObject {
 
     /// Swaps `opened`'s tab from the SSH-2 attempt that just failed with
     /// `.unsupportedVersion` into a from-scratch SSH-1 client, transparently
-    /// -- same tab, same profile, no new UI or profile field needed. Only
+    ///, same tab, same profile, no new UI or profile field needed. Only
     /// password auth is supported on this path; a profile using key-based
     /// auth surfaces a clear error instead of silently trying a blank
     /// password.
@@ -907,7 +907,7 @@ final class SessionManager: ObservableObject {
 
     /// Plain-language text for the NIO channel errors that actually reach
     /// a user here. `ChannelError` doesn't conform to `LocalizedError`, so
-    /// without this it bridges to "(NIOCore.ChannelError error 0.)" -- and
+    /// without this it bridges to "(NIOCore.ChannelError error 0.)", and
     /// error 0 is `connectTimeout`, the most common one of the set, which
     /// is exactly the case someone needs a real explanation for.
     private static func describe(_ error: ChannelError) -> String {
@@ -919,7 +919,7 @@ final class SessionManager: ObservableObject {
         case .connectPending:
             return "A connection attempt to this device is already in progress."
         case .operationUnsupported, .inappropriateOperationForState:
-            return "The connection was used in a way it doesn't support. That's a bug in MobaMac rather than a problem with the device."
+            return "MobaMac encountered an internal error. This is not a problem with the device. Please report it."
         default:
             return "Network error: \(error)."
         }
@@ -956,7 +956,7 @@ final class SessionManager: ObservableObject {
             message = "The device rejected the login. Check the username and password. If this session was opened from Recent and was first created through Quick Connect in MobaMac 1.8 or earlier, it was saved without its password: connect to it once more through Quick Connect, or edit the session and enter the password."
         } else {
             // NSError bridging turns a plain Swift error into "The operation
-            // couldn't be completed. (SomeModule.SomeError error 3.)" -- that
+            // couldn't be completed. (SomeModule.SomeError error 3.)", that
             // number is the enum case index, which means nothing to whoever
             // is reading it and nothing in a bug report either. When that's
             // the shape we'd be showing, use Swift's own description

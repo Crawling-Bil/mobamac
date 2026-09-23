@@ -10,7 +10,7 @@ import Sparkle
 /// is nothing to build here beyond a menu item and a preference. What this
 /// class adds is the small amount of state SwiftUI needs to observe, and one
 /// thing Sparkle cannot know on its own: that this app may be holding live
-/// SSH sessions to production gear, and restarting itself out from under
+/// SSH sessions to production devices, and restarting itself out from under
 /// them is not acceptable.
 final class UpdaterController: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var controller: SPUStandardUpdaterController!

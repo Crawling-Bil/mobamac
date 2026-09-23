@@ -4,7 +4,7 @@ import Network
 /// A raw Telnet client over Network.framework. There's no Citadel
 /// equivalent for Telnet (per the PRD's architecture notes) so this talks
 /// TCP directly and implements just enough of RFC 854's option-negotiation
-/// framing to stay usable against real gear: every negotiation request
+/// framing to stay usable against real devices: every negotiation request
 /// (WILL/DO) gets a blanket refusal (DONT/WONT), which pushes most servers
 /// into plain pass-through instead of hanging on a handshake this client
 /// doesn't fully implement. Good enough for the legacy-device-access use
@@ -168,7 +168,7 @@ final class TelnetConnectionSession: ConnectionSession {
     }
 
     func resize(cols: Int, rows: Int) async {
-        // NAWS (option 31) isn't implemented — the legacy gear this targets
+        // NAWS (option 31) isn't implemented. The legacy devices this targets
         // doesn't renegotiate terminal size mid-session in practice.
     }
 
