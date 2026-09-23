@@ -43,6 +43,15 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   back on.
 - Quitting, or closing the window, with sessions still connected asks
   once for all of them rather than once per tab.
+- Tabs can be switched from the keyboard: Cmd-1 to Cmd-8 for a tab by
+  position, Cmd-9 for the last one, Cmd-Shift-[ and Cmd-Shift-] to move
+  left and right, and Ctrl-Tab and Ctrl-Shift-Tab for the same. The
+  Window menu lists the open tabs with their keys. Macros keep Opt-Cmd
+  and did not change.
+- Two optional habits from MobaXterm and PuTTY, both off by default and
+  both in Settings under Terminal: "Copy on select" and "Right-click
+  pastes". With right-click paste on, Control-click still opens the
+  context menu, and a multi-line paste still asks first.
 
 ## 1.15
 

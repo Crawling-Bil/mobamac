@@ -231,6 +231,39 @@ final class SessionManager: ObservableObject {
         close(active)
     }
 
+    // MARK: - Tab navigation
+
+    /// Jump straight to a tab by position, 0-based. Out of range does
+    /// nothing, so Cmd-3 with two tabs open is simply ignored rather than
+    /// landing somewhere arbitrary.
+    func selectTab(at index: Int) {
+        guard openSessions.indices.contains(index) else { return }
+        activeSessionID = openSessions[index].id
+    }
+
+    /// Cmd-9 is the last tab, not the ninth. Safari and Chrome both do this,
+    /// and it is far more useful: "the one I opened most recently" is a
+    /// thing people want, "the ninth" almost never is.
+    func selectLastTab() {
+        activeSessionID = openSessions.last?.id
+    }
+
+    func selectNextTab() { stepTab(by: 1) }
+
+    func selectPreviousTab() { stepTab(by: -1) }
+
+    /// Wraps at both ends. The modulo is written twice because Swift's %
+    /// keeps the sign of the left operand, so -1 % 3 is -1, not 2.
+    private func stepTab(by offset: Int) {
+        guard openSessions.count > 1 else { return }
+        guard let current = openSessions.firstIndex(where: { $0.id == activeSessionID }) else {
+            activeSessionID = openSessions.first?.id
+            return
+        }
+        let count = openSessions.count
+        activeSessionID = openSessions[((current + offset) % count + count) % count].id
+    }
+
     /// The single door every close goes through: the tab bar's x, a
     /// middle-click on a tab, Cmd-W, the toolbar's Close Tab, and the Close
     /// Tab button on a failed session's screen. Putting the decision here

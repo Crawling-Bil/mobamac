@@ -8,6 +8,8 @@ struct PreferencesView: View {
         TabView {
             GeneralPreferencesView()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            TerminalPreferencesView()
+                .tabItem { Label("Terminal", systemImage: "terminal") }
             LoggingPreferencesView()
                 .tabItem { Label("Logging", systemImage: "doc.text") }
         }
@@ -63,6 +65,36 @@ private struct GeneralPreferencesView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+private struct TerminalPreferencesView: View {
+    @State private var copyOnSelect = TerminalBehaviorSettings.copyOnSelect
+    @State private var rightClickPastes = TerminalBehaviorSettings.rightClickPastes
+
+    var body: some View {
+        Form {
+            Toggle("Copy on select", isOn: $copyOnSelect)
+                .onChange(of: copyOnSelect) { _, newValue in
+                    TerminalBehaviorSettings.copyOnSelect = newValue
+                }
+            Text("Selecting text in the terminal puts it on the clipboard straight away, the way MobaXterm and PuTTY do. A click with nothing selected leaves the clipboard alone.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Toggle("Right-click pastes", isOn: $rightClickPastes)
+                .onChange(of: rightClickPastes) { _, newValue in
+                    TerminalBehaviorSettings.rightClickPastes = newValue
+                }
+            Text("Right-clicking in the terminal pastes instead of opening the context menu. Control-click still opens the menu. Pasting several lines asks for confirmation either way.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
         .padding()

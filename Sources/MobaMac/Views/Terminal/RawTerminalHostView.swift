@@ -12,7 +12,7 @@ struct RawTerminalHostView: NSViewRepresentable {
     let connection: ConnectionSession
 
     func makeNSView(context: Context) -> TerminalView {
-        let terminalView = TerminalView(frame: .init(x: 0, y: 0, width: 800, height: 500))
+        let terminalView = MobaMacTerminalView(frame: .init(x: 0, y: 0, width: 800, height: 500))
         terminalView.terminalDelegate = context.coordinator
         terminalView.apply(theme: TerminalTheme.theme(for: openSession.themeID))
         terminalView.applyMobaMacTerminalFont()

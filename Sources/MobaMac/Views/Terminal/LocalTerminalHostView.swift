@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftTerm
+import AppKit
 
 /// Subclass of LocalProcessTerminalView that also tees every raw byte the
 /// local shell's PTY produces to our own session log file. `dataReceived`
@@ -26,6 +27,22 @@ final class LoggingLocalProcessTerminalView: LocalProcessTerminalView {
     override func dataReceived(slice: ArraySlice<UInt8>) {
         onRawData?(Data(slice))
         super.dataReceived(slice: slice)
+    }
+
+    // Repeated from MobaMacTerminalView rather than shared by inheritance:
+    // this class has to descend from LocalProcessTerminalView, so the two
+    // can't have a common terminal subclass. The behaviour itself lives in
+    // TerminalInteraction, which is what actually keeps them identical.
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        TerminalInteraction.copySelectionIfEnabled(in: self)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard TerminalInteraction.handleRightClickPaste(event, in: self) else {
+            super.rightMouseDown(with: event)
+            return
+        }
     }
 }
 

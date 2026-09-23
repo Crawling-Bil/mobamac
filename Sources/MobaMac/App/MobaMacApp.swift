@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// how many sessions are still live and AppKit's delegate has no other
     /// route into the SwiftUI object graph. Weak: the App owns it.
     weak var sessionManager: SessionManager?
+    private var tabSwitchMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -20,6 +21,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // exactly when a user is least likely to be mid-review of a log
         // that's about to age out.
         LogRetentionManager.purgeExpiredLogs()
+        installTabSwitchMonitor()
+    }
+
+    /// Control-Tab and Control-Shift-Tab, as an alternative to Cmd-Shift-[
+    /// and ].
+    ///
+    /// A local event monitor rather than two more menu items: SwiftUI has no
+    /// way to give one command a second shortcut, and a Window menu with
+    /// "Next Tab" listed twice under different keys reads like a bug. The
+    /// menu shows the Cmd-Shift pair; these are the muscle-memory ones.
+    private func installTabSwitchMonitor() {
+        tabSwitchMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let sessionManager = self?.sessionManager else { return event }
+            // keyCode 48 is Tab. The character for Control-Tab is not
+            // something to match on: it arrives as a control character that
+            // differs by keyboard layout.
+            guard event.keyCode == 48, event.modifierFlags.contains(.control) else { return event }
+            if event.modifierFlags.contains(.shift) {
+                sessionManager.selectPreviousTab()
+            } else {
+                sessionManager.selectNextTab()
+            }
+            // Swallowed, so Tab never also reaches the terminal.
+            return nil
+        }
     }
 
     /// Closing the window quits, which is what a single-window app should
@@ -124,6 +150,38 @@ struct MobaMacApp: App {
                         .disabled(sessionManager.activeSession == nil)
                     }
                 }
+            }
+            // In the Window menu rather than a menu of their own, which is
+            // where macOS users look for these, and listing the open tabs by
+            // name makes the shortcuts discoverable instead of folklore.
+            CommandGroup(after: .windowList) {
+                Button("Next Tab") {
+                    sessionManager.selectNextTab()
+                }
+                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .disabled(sessionManager.openSessions.count < 2)
+
+                Button("Previous Tab") {
+                    sessionManager.selectPreviousTab()
+                }
+                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .disabled(sessionManager.openSessions.count < 2)
+
+                Divider()
+
+                // Eight, not nine: Cmd-9 belongs to the last tab.
+                ForEach(Array(sessionManager.openSessions.prefix(8).enumerated()), id: \.element.id) { index, session in
+                    Button(session.title) {
+                        sessionManager.selectTab(at: index)
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+
+                Button("Last Tab") {
+                    sessionManager.selectLastTab()
+                }
+                .keyboardShortcut("9", modifiers: .command)
+                .disabled(sessionManager.openSessions.isEmpty)
             }
             CommandMenu("Go") {
                 Button("Command Palette…") {

@@ -33,6 +33,27 @@ download, unzip or drag again. **MobaMac → Check for Updates…** checks
 immediately, and the **Automatically Check for Updates** item next to it
 turns the daily check off.
 
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| ⌘1 – ⌘8 | Select tab 1 to 8 |
+| ⌘9 | Select the last tab |
+| ⌘⇧] / ⌘⇧[ | Next / previous tab, wrapping at both ends |
+| ⌃Tab / ⌃⇧Tab | Next / previous tab |
+| ⌘W | Close the active tab |
+| ⌘K | Command palette |
+| ⌘R | Reconnect, on a tab that dropped or failed |
+| ⌘+ / ⌘- / ⌘0 | Zoom in / out / actual size, across every tab |
+| ⌥⌘*key* | Run a macro, with the key set per snippet |
+| ⌘F | Search saved sessions in the sidebar |
+| ⌘C / ⌘V | Copy / paste, with a confirmation for multi-line pastes |
+| ⌘, | Settings |
+| ⌘Q | Quit, confirming if sessions are still connected |
+
+Macros keep ⌥⌘, so tab switching could take the ⌘1 – ⌘9 row that macOS
+apps normally use for it. Nothing changed meaning.
+
 ## Building from source
 
 Needs Xcode Command Line Tools (no full Xcode required).
