@@ -86,7 +86,9 @@ cp "$BINARY" "$BUNDLE_DIR/Contents/MacOS/$APP_NAME"
 # Sparkle ships as an XCFramework through SwiftPM. `swift build` links
 # against it but has no concept of an app bundle, so the framework has to be
 # copied in and the binary taught where to look for it at runtime.
-SPARKLE_FRAMEWORK=$(find .build/artifacts -type d -name "Sparkle.framework" -path "*macos*" 2>/dev/null | head -1)
+# -type d skips the compatibility symlinks at the framework root, and
+# /extract/ is SwiftPM's temporary unzip staging, which it empties again.
+SPARKLE_FRAMEWORK=$(find .build/artifacts -type d -name "Sparkle.framework" -path "*macos*" ! -path "*/extract/*" 2>/dev/null | head -1)
 if [ -z "$SPARKLE_FRAMEWORK" ]; then
     echo "Couldn't find Sparkle.framework under .build/artifacts — run 'swift package resolve' and try again."
     exit 1
@@ -171,16 +173,35 @@ EOF
 SPARKLE_DEST="$BUNDLE_DIR/Contents/Frameworks/Sparkle.framework"
 
 echo "Signing Sparkle.framework as \"$SIGN_IDENTITY\"..."
-# -depth so the deepest nested bundle is signed first.
-find "$SPARKLE_DEST" \( -name "*.xpc" -o -name "*.app" \) -depth | while IFS= read -r nested; do
-    codesign --force --sign "$SIGN_IDENTITY" "$nested"
+# The order and the flags here are Sparkle's own documented recipe.
+#
+# --preserve-metadata=entitlements on the XPC services: Installer.xpc and
+# Downloader.xpc ship with entitlements, and re-signing without that flag
+# drops them, which breaks the install step at the worst possible moment —
+# after the update has already downloaded.
+#
+# The version directory is what gets signed, not the framework root: a
+# versioned bundle seals per version, and Sparkle.framework's top level is
+# nothing but symlinks into it.
+for versiondir in "$SPARKLE_DEST"/Versions/*; do
+    # Versions/Current is a symlink to the real one. Signing through it
+    # would sign everything a second time and invalidate the seal just made.
+    if [ -L "$versiondir" ] || [ ! -d "$versiondir" ]; then
+        continue
+    fi
+    for xpc in "$versiondir"/XPCServices/*.xpc; do
+        if [ -d "$xpc" ]; then
+            codesign --force --sign "$SIGN_IDENTITY" --preserve-metadata=entitlements "$xpc"
+        fi
+    done
+    if [ -f "$versiondir/Autoupdate" ]; then
+        codesign --force --sign "$SIGN_IDENTITY" "$versiondir/Autoupdate"
+    fi
+    if [ -d "$versiondir/Updater.app" ]; then
+        codesign --force --sign "$SIGN_IDENTITY" "$versiondir/Updater.app"
+    fi
+    codesign --force --sign "$SIGN_IDENTITY" "$versiondir"
 done
-# Autoupdate is a bare Mach-O helper in some Sparkle versions, not a bundle,
-# so find above doesn't catch it.
-for helper in "$SPARKLE_DEST"/Versions/*/Autoupdate; do
-    [ -f "$helper" ] && codesign --force --sign "$SIGN_IDENTITY" "$helper"
-done
-codesign --force --sign "$SIGN_IDENTITY" "$SPARKLE_DEST"
 
 echo "Signing $APP_NAME.app as \"$SIGN_IDENTITY\"..."
 codesign --force --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
