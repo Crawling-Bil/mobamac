@@ -40,8 +40,12 @@ enum LogRetentionManager {
             at: logDirectory, includingPropertiesForKeys: [.contentModificationDateKey]
         )) ?? []
 
+        // Only MobaMac's own two extensions, never everything in the
+        // folder: the log location is about to become user-settable, and
+        // someone may well point it at a folder that has their own files in
+        // it.
         var purged = 0
-        for url in files where url.pathExtension == "log" {
+        for url in files where url.pathExtension == "log" || url.pathExtension == "raw" {
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             if let modified, modified < cutoff {
                 try? FileManager.default.removeItem(at: url)

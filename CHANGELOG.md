@@ -14,6 +14,14 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   different app and asks for Keychain access to every saved SSH password
   again after every update. Building from source now needs a certificate
   created once; the README has the four steps.
+- Session logs are plain text. Color codes, cursor movement and the
+  redrawing a prompt does are stripped, so a log reads the way the screen
+  did and can go straight into a report. This covers SSH, SSH-1, Telnet,
+  Serial and the local terminal alike. A progress bar or spinner is kept
+  as the line it finished on, not every frame it drew.
+- The status bar no longer covers the last row of the terminal. It also
+  made the device believe the screen was a row taller than it was, so
+  long output like "show running-config" paged against the wrong height.
 
 ## 1.15
 

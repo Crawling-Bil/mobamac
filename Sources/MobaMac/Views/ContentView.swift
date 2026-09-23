@@ -86,11 +86,22 @@ struct ContentView: View {
         }
     }
 
-    /// The detail column: the tab strip, then the terminal beside whatever
-    /// panel is open, with the status bar pinned underneath the lot.
-    /// `safeAreaInset` rather than another `VStack` row so the terminal
-    /// keeps thinking it owns the full height and the bar never scrolls
-    /// away with content.
+    /// The detail column: the tab strip, the terminal beside whatever panel
+    /// is open, and the status bar, as three plain rows of one VStack.
+    ///
+    /// The status bar used to be a `safeAreaInset`, which was wrong in a way
+    /// that only showed up in use: an NSViewRepresentable doesn't honour the
+    /// safe area, so SwiftTerm kept sizing itself to the full height and the
+    /// bar sat on top of its bottom row. The prompt was there, just
+    /// underneath. Worse, SwiftTerm derived its row count from that same
+    /// full height and reported it to the device through
+    /// `resize(cols:rows:)`, so the device believed the screen was one row
+    /// taller than it was and paged long output like "show running-config"
+    /// against the wrong height.
+    ///
+    /// A VStack row takes the height away for real, so SwiftTerm recomputes
+    /// its rows and tells the device the truth. Nothing may overlap the
+    /// terminal.
     private var detailColumn: some View {
         VStack(spacing: 0) {
             if !sessionManager.openSessions.isEmpty {
@@ -102,8 +113,7 @@ struct ContentView: View {
                     panelColumn(panel)
                 }
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let session = sessionManager.activeSession {
                 StatusBarView(session: session)
             }

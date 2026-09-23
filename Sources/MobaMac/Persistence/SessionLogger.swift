@@ -1,20 +1,34 @@
 import Foundation
 
-/// Tees raw session bytes to a per-session log file as they arrive,
-/// independent of whatever scrollback the terminal view keeps on screen.
-/// This is what actually solves "output disappears when I scroll" —
-/// the file has everything, regardless of what's currently rendered.
+/// Writes a per-session log as bytes arrive, independent of whatever
+/// scrollback the terminal view keeps on screen. This is what actually
+/// solves "output disappears when I scroll" — the file has everything,
+/// regardless of what's currently rendered.
 ///
-/// For SSH sessions, SSHTerminalHostView calls `write(_:)` itself as bytes
-/// come in from Citadel. For the local-terminal tab, we don't write through
-/// here at all — see LocalTerminalHostView, which lets the `script` command
-/// do the capture at the OS/PTY level instead (SwiftTerm's local-process
-/// delegate doesn't expose a clean public hook for this — see
-/// migueldeicaza/SwiftTerm#308). Either way, `fileURL` is the path the log
-/// ends up at.
+/// Every session kind arrives here: SSH and SSH-1 through
+/// SSHTerminalHostView, Telnet and Serial through RawTerminalHostView, and
+/// the local shell through LoggingLocalProcessTerminalView's `dataReceived`
+/// override. One `write(_:)` for all five is the reason the sanitizer below
+/// only needs to exist in one place.
+///
+/// What lands in the `.log` is plain text (see `TerminalOutputSanitizer`),
+/// not the raw stream: the raw stream is full of color codes and cursor
+/// movement and is no use as documentation. `LogSettings.keepRawLogs` keeps
+/// the unfiltered bytes too, as a `.raw` file beside it.
 final class SessionLogger {
     private let fileHandle: FileHandle?
+    private let rawFileHandle: FileHandle?
+    private let sanitizer = TerminalOutputSanitizer()
+    /// `write(_:)` is called from whichever thread the connection reads on —
+    /// a NIO event loop for SSH, a Network.framework queue for Telnet, the
+    /// serial port's own queue — and the sanitizer carries state from one
+    /// call to the next. Without this, two chunks interleaving would corrupt
+    /// a half-parsed escape sequence and put garbage in the file.
+    private let lock = NSLock()
     let fileURL: URL
+    /// Where the unfiltered bytes go when `LogSettings.keepRawLogs` is on,
+    /// nil otherwise.
+    let rawFileURL: URL?
 
     init(profileName: String, logDirectory: URL? = nil) {
         let base = logDirectory ?? FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
@@ -34,6 +48,16 @@ final class SessionLogger {
         FileManager.default.createFile(atPath: url.path, contents: nil)
         self.fileHandle = try? FileHandle(forWritingTo: url)
         self.fileURL = url
+
+        if LogSettings.keepRawLogs {
+            let rawURL = url.deletingPathExtension().appendingPathExtension("raw")
+            FileManager.default.createFile(atPath: rawURL.path, contents: nil)
+            self.rawFileHandle = try? FileHandle(forWritingTo: rawURL)
+            self.rawFileURL = rawURL
+        } else {
+            self.rawFileHandle = nil
+            self.rawFileURL = nil
+        }
     }
 
     /// `2026-09-22_14-30-15_sw-ntt-dist01.log`
@@ -66,11 +90,36 @@ final class SessionLogger {
     /// lands after `close()`, would take the whole app down. The throwing
     /// `write(contentsOf:)` turns both into an ignorable error. Losing a
     /// log line is better than losing every open session.
+    ///
+    /// The data handed in is always what the device actually sent, taken
+    /// before MobaMac's own highlighting has a chance to inject color codes
+    /// of its own — otherwise the sanitizer would be stripping ANSI that
+    /// MobaMac had just added, and the log would describe the app rather
+    /// than the device.
     func write(_ data: Data) {
-        try? fileHandle?.write(contentsOf: data)
+        lock.lock()
+        defer { lock.unlock() }
+        if let rawFileHandle {
+            try? rawFileHandle.write(contentsOf: data)
+        }
+        // Line buffered: a chunk that ends mid-line produces nothing here
+        // and is written when its newline arrives, or by `close()`.
+        let text = sanitizer.filter(data)
+        if !text.isEmpty {
+            try? fileHandle?.write(contentsOf: text)
+        }
     }
 
     func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        // The line the session was sitting on — usually the prompt — has no
+        // newline to trigger it, so it is written out here or lost.
+        let tail = sanitizer.flush()
+        if !tail.isEmpty {
+            try? fileHandle?.write(contentsOf: tail)
+        }
         try? fileHandle?.close()
+        try? rawFileHandle?.close()
     }
 }
