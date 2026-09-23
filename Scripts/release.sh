@@ -97,12 +97,17 @@ publish_appcast() {
     python3 Scripts/merge-appcast.py "$stage/appcast.xml" "$APPCAST_PATH" "$SHORT_VERSION" "$NOTES_FILE"
     rm -rf "$stage"
 
-    if git diff --quiet -- "$APPCAST_PATH"; then
+    # Staged first, then compared against the index. `git diff` on its own
+    # does not see an untracked file, so the very first appcast ever
+    # generated looked "unchanged" and was silently never published -- a
+    # release that went out with auto-update dead and no error to show for
+    # it.
+    git add "$APPCAST_PATH"
+    if git diff --cached --quiet -- "$APPCAST_PATH"; then
         echo "$APPCAST_PATH unchanged."
         return 0
     fi
     echo "== Publishing $APPCAST_PATH =="
-    git add "$APPCAST_PATH"
     git commit -m "Appcast: MobaMac $SHORT_VERSION"
     git push origin main
 }
