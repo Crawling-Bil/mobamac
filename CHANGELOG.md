@@ -36,6 +36,13 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
 - Old logs are deleted only from the folder logging currently points at,
   and only MobaMac's own .log and .raw files, since the folder you pick
   may well have your own files in it.
+- Closing a tab whose session is still connected now asks first, however
+  you close it. Tabs that already dropped, failed or ended close straight
+  away, and so does a local terminal, because nothing is lost there. The
+  dialog has "Don't ask again", and Settings has the switch to turn it
+  back on.
+- Quitting, or closing the window, with sessions still connected asks
+  once for all of them rather than once per tab.
 
 ## 1.15
 

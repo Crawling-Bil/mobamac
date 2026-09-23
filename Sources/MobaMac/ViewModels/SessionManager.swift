@@ -231,6 +231,64 @@ final class SessionManager: ObservableObject {
         close(active)
     }
 
+    /// The single door every close goes through: the tab bar's x, a
+    /// middle-click on a tab, Cmd-W, the toolbar's Close Tab, and the Close
+    /// Tab button on a failed session's screen. Putting the decision here
+    /// rather than at each button is the only way five entry points stay in
+    /// agreement about when to ask.
+    func requestClose(_ session: OpenSession) {
+        guard needsCloseConfirmation(session) else {
+            close(session)
+            return
+        }
+        guard CloseConfirmation.confirmCloseTab(
+            sessionName: session.title,
+            host: closeConfirmationHost(for: session)
+        ) else { return }
+        close(session)
+    }
+
+    func requestCloseActive() {
+        guard let active = activeSession else { return }
+        requestClose(active)
+    }
+
+    /// A tab worth asking about: one where closing actually costs something.
+    ///
+    /// A tab that already failed or ended has nothing left to disconnect, a
+    /// local terminal disconnects from nothing, and a tab the user is
+    /// closing deliberately shouldn't collect a dialog for free.
+    private func needsCloseConfirmation(_ session: OpenSession) -> Bool {
+        CloseConfirmationSettings.isEnabled && isLive(session)
+    }
+
+    /// Connected or still connecting, with no failure showing. Also what the
+    /// quit prompt counts.
+    private func isLive(_ session: OpenSession) -> Bool {
+        if case .local = session.kind { return false }
+        guard session.connectionIssue == nil else { return false }
+        switch connectionState(for: session.profile.id) {
+        case .connected, .connecting:
+            return true
+        case .idle, .failed:
+            return false
+        }
+    }
+
+    /// How many open tabs would lose a live connection if the app quit now.
+    var liveSessionCount: Int {
+        openSessions.filter { isLive($0) }.count
+    }
+
+    private func closeConfirmationHost(for session: OpenSession) -> String {
+        let profile = session.profile
+        if profile.kind == .serial {
+            let path = profile.serialPortPath ?? ""
+            return path.isEmpty ? "a serial port" : (path as NSString).lastPathComponent
+        }
+        return profile.host.isEmpty ? "its device" : profile.host
+    }
+
     /// Fires a snippet/macro at the active tab, whatever kind it is — SSH,
     /// Telnet, Serial or Local all end up feeding the same
     /// `TerminalView.send(txt:)` entry point a real keystroke would use, so

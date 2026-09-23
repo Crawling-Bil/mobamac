@@ -70,7 +70,7 @@ private struct SessionTabItem: View {
             // moment the pointer crosses it, and the tab under the pointer
             // would move out from under it.
             Button {
-                sessionManager.close(session)
+                sessionManager.requestClose(session)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
@@ -93,7 +93,7 @@ private struct SessionTabItem: View {
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { sessionManager.activeSessionID = session.id }
-        .overlay { MiddleClickCatcher { sessionManager.close(session) } }
+        .overlay { MiddleClickCatcher { sessionManager.requestClose(session) } }
         .help(session.title)
     }
 

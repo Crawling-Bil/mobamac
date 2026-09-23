@@ -6,6 +6,11 @@ import AppKit
 /// the SwiftUI window can exist but never actually appear on screen. Forcing
 /// both explicitly in applicationDidFinishLaunching is the standard fix.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Handed over by the App below, because quitting has to be able to ask
+    /// how many sessions are still live and AppKit's delegate has no other
+    /// route into the SwiftUI object graph. Weak: the App owns it.
+    weak var sessionManager: SessionManager?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -15,6 +20,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // exactly when a user is least likely to be mid-review of a log
         // that's about to age out.
         LogRetentionManager.purgeExpiredLogs()
+    }
+
+    /// Closing the window quits, which is what a single-window app should
+    /// do — and it also means closing the window goes through the same
+    /// confirmation below instead of quietly leaving live sessions running
+    /// in an app with nothing on screen.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
+    /// One prompt for the lot, not one per tab: being asked five times in a
+    /// row is how people learn to click through dialogs without reading
+    /// them. Deliberately not tied to the "confirm before closing a
+    /// connected session" preference — that setting is about the friction of
+    /// closing one tab, while this is every session at once and not
+    /// something to lose by reflex.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminationReply {
+        guard let sessionManager else { return .terminateNow }
+        let live = sessionManager.liveSessionCount
+        guard live > 0 else { return .terminateNow }
+        return CloseConfirmation.confirmQuit(connectedCount: live) ? .terminateNow : .terminateCancel
     }
 }
 
@@ -46,6 +72,7 @@ struct MobaMacApp: App {
                 // (see WindowFrameAutosave) takes over remembering whatever
                 // the user resizes it to on every launch after that.
                 .background(WindowFrameAutosave())
+                .onAppear { appDelegate.sessionManager = sessionManager }
         }
         .defaultSize(width: 1100, height: 680)
         // Menu-bar shortcuts, unlike a SwiftUI view modifier attached to
@@ -80,7 +107,7 @@ struct MobaMacApp: App {
             // the standard Close item that shares ⌘W.
             CommandGroup(after: .newItem) {
                 Button("Close Tab") {
-                    sessionManager.closeActive()
+                    sessionManager.requestCloseActive()
                 }
                 .keyboardShortcut("w", modifiers: .command)
                 .disabled(sessionManager.activeSession == nil)

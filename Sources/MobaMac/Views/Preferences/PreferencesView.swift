@@ -18,6 +18,9 @@ struct PreferencesView: View {
 private struct GeneralPreferencesView: View {
     @EnvironmentObject var appearanceSettings: AppearanceSettings
     @EnvironmentObject var updater: UpdaterController
+    /// Read once into local state because the dialog's suppression checkbox
+    /// can change it behind this view's back; reopening Settings re-reads it.
+    @State private var confirmClose = CloseConfirmationSettings.isEnabled
 
     var body: some View {
         Form {
@@ -28,6 +31,17 @@ private struct GeneralPreferencesView: View {
             }
             .pickerStyle(.segmented)
             Text("Applies to the app's own windows. The terminal keeps its own color theme.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            Toggle("Confirm before closing a connected session", isOn: $confirmClose)
+                .onChange(of: confirmClose) { _, newValue in
+                    CloseConfirmationSettings.isEnabled = newValue
+                }
+            Text("Ticking \"Don't ask again\" in that dialog turns this off. This is where to turn it back on.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

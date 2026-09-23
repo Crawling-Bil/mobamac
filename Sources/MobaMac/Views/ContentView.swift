@@ -248,7 +248,7 @@ struct ContentView: View {
             themeMenuItem
             Divider()
             Button {
-                sessionManager.closeActive()
+                sessionManager.requestCloseActive()
             } label: {
                 Label("Close Tab", systemImage: "xmark.circle")
             }
@@ -522,7 +522,7 @@ private struct SessionTabView: View {
                     .help("Try this connection again (⌘R).")
                 }
                 Button("Close Tab") {
-                    sessionManager.close(session)
+                    sessionManager.requestClose(session)
                 }
             }
         }
