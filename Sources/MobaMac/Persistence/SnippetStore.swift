@@ -36,6 +36,25 @@ final class SnippetStore: ObservableObject {
         save()
     }
 
+    /// Reorders the list and rewrites `buttonBarOrder` from the new
+    /// positions, so the button bar follows what the panel shows rather than
+    /// keeping a separate order that drifts out of step.
+    func move(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        snippets.move(fromOffsets: offsets, toOffset: destination)
+        for index in snippets.indices {
+            snippets[index].buttonBarOrder = index
+        }
+        save()
+    }
+
+    /// The snippets shown in the button bar, in order, filtered to the
+    /// device type of whichever session is in front.
+    func buttonBarSnippets(deviceType: String?) -> [Snippet] {
+        snippets
+            .filter { $0.isInButtonBar && $0.appliesTo(deviceType: deviceType) }
+            .sorted { ($0.buttonBarOrder ?? Int.max) < ($1.buttonBarOrder ?? Int.max) }
+    }
+
     func delete(_ snippet: Snippet) {
         snippets.removeAll { $0.id == snippet.id }
         save()

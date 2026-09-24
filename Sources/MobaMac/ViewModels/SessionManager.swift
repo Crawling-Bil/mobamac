@@ -263,6 +263,57 @@ final class SessionManager: ObservableObject {
         duplicateRequest = DuplicateRequest(profile: profile)
     }
 
+    // MARK: - Terminal search
+
+    /// The result of a search, as the find bar shows it: "3 of 47".
+    struct FindSummary: Equatable {
+        var index = 0
+        var total = 0
+    }
+
+    /// Whether the find bar is open. Lives here rather than in ContentView
+    /// because the Edit menu's Find command has no other way to reach it.
+    @Published var showFindBar = false
+
+    /// Wraps SwiftTerm's own search so the find bar never has to import it.
+    ///
+    /// That is not tidiness: SwiftTerm exports a `Color` type of its own,
+    /// and importing it into a SwiftUI view makes every `Color` in that file
+    /// ambiguous. This file already imports SwiftTerm, so the search types
+    /// stay here and the view sees plain Bools and Ints.
+    @discardableResult
+    func findInTerminal(
+        _ term: String,
+        session: OpenSession,
+        caseSensitive: Bool,
+        regex: Bool,
+        forward: Bool
+    ) -> FindSummary {
+        guard let view = session.terminalView, !term.isEmpty else { return FindSummary() }
+        let options = SearchOptions(caseSensitive: caseSensitive, regex: regex, wholeWord: false)
+        if forward {
+            view.findNext(term, options: options)
+        } else {
+            view.findPrevious(term, options: options)
+        }
+        let summary = view.searchMatchSummary(term, options: options)
+        return FindSummary(index: summary.index, total: summary.total)
+    }
+
+    func clearTerminalSearch(in session: OpenSession) {
+        session.terminalView?.clearSearch()
+    }
+
+    // MARK: - Button bar
+
+    private static let showButtonBarKey = "MobaMac.showButtonBar"
+
+    /// Off until someone turns it on: a row of buttons nobody has configured
+    /// yet would just be empty space above every terminal.
+    @Published var showButtonBar: Bool = UserDefaults.standard.bool(forKey: SessionManager.showButtonBarKey) {
+        didSet { UserDefaults.standard.set(showButtonBar, forKey: Self.showButtonBarKey) }
+    }
+
     // MARK: - Tab navigation
 
     /// Jump straight to a tab by position, 0-based. Out of range does

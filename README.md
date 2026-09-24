@@ -74,12 +74,12 @@ logs.
 | ⌘⇧] / ⌘⇧[ | Next / previous tab, wrapping at both ends |
 | ⌃Tab / ⌃⇧Tab | Next / previous tab |
 | ⌘D | Duplicate the active tab's session |
+| ⌘F | Find in the active terminal's scrollback |
 | ⌘W | Close the active tab |
 | ⌘K | Command palette |
 | ⌘R | Reconnect, on a tab that dropped or failed |
 | ⌘+ / ⌘- / ⌘0 | Zoom in / out / actual size, across every tab |
 | ⌥⌘*key* | Run a snippet, with the key assigned per snippet |
-| ⌘F | Search saved sessions in the sidebar |
 | ⌘C / ⌘V | Copy / paste, with a confirmation for multi-line pastes |
 | ⌘, | Settings |
 | ⌘Q | Quit, confirming if sessions are still connected |

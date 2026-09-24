@@ -127,6 +127,15 @@ struct ContentView: View {
             if !sessionManager.openSessions.isEmpty {
                 SessionTabBar()
             }
+            // Find bar above the button bar: it is transient and takes
+            // keyboard focus, so it belongs nearest the thing it is acting
+            // on rather than buried under a row of buttons.
+            if sessionManager.showFindBar, let session = sessionManager.activeSession {
+                FindBarView(session: session, isPresented: $sessionManager.showFindBar)
+            }
+            if sessionManager.showButtonBar, !sessionManager.openSessions.isEmpty {
+                ButtonBarView()
+            }
             HSplitView {
                 sessionArea
                 if let panel = activePanel {

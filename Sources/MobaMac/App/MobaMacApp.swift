@@ -149,6 +149,16 @@ struct MobaMacApp: App {
                 .keyboardShortcut("w", modifiers: .command)
                 .disabled(sessionManager.activeSession == nil)
             }
+            // Under Edit, where Find lives in every other Mac app. The
+            // sidebar's own session search keeps its field in the toolbar and
+            // is reached by clicking it, so nothing is competing for this.
+            CommandGroup(after: .textEditing) {
+                Button("Find in Terminal…") {
+                    sessionManager.showFindBar = true
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(sessionManager.activeSession == nil)
+            }
             CommandMenu("Snippets") {
                 if snippetStore.snippets.isEmpty {
                     Text("No snippets saved yet")
@@ -206,6 +216,13 @@ struct MobaMacApp: App {
             // (TerminalFontSettings) so new tabs — and the next launch —
             // start at whatever size this was last left at.
             CommandMenu("View") {
+                Toggle("Show Button Bar", isOn: Binding(
+                    get: { sessionManager.showButtonBar },
+                    set: { sessionManager.showButtonBar = $0 }
+                ))
+
+                Divider()
+
                 Button("Zoom In") {
                     sessionManager.applyTerminalFontSize(TerminalFontSettings.increase())
                 }

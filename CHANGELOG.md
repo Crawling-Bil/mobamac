@@ -3,18 +3,8 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
-## 1.17
+## 1.18
 
-- Duplicate a session from its context menu in the sidebar, or with
-  Cmd-D for the one in the active tab. It opens straight into the form
-  with everything filled in, so adding twenty switches for one customer
-  is twenty names and addresses rather than twenty full forms. The
-  password comes across too; if it can't be read back, the copy says so
-  instead of failing to log in later.
-- An update will not restart MobaMac while a session is still
-  connected. It says how many, and offers to install anyway or wait --
-  waiting installs it the next time MobaMac is quit.
-- Settings shows when updates were last checked for.
 - Wording across the app is consistent: one term per concept, no
   references to other products, and plainer descriptions in tooltips and
   error messages. The Macros menu is now Snippets, matching the panel it
@@ -35,7 +25,32 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   just rebooted is back to its default paging. They are never sent to
   broadcast targets, and they appear in the session log like anything
   else typed.
+- Cmd-F searches the active terminal's scrollback. The find bar shows
+  how many matches there are and which one you are on, steps through
+  them with Return and Shift-Return, and has case-sensitive and regular
+  expression options. Esc closes it.
+- A snippet can be shown as a button above the terminal, so a command
+  run dozens of times a day is one click rather than opening a panel
+  first. Tick it in the Snippets panel and drag to set the order. View
+  has a Show Button Bar switch.
+- A snippet can be limited to certain device types, so switch commands
+  stay off the bar while a firewall tab is in front, and can be set to
+  ask before running, which is worth doing for reload or write erase.
+- While broadcast is on, the button bar turns red and each button says
+  how many sessions a click would reach.
 
+## 1.17
+
+- Duplicate a session from its context menu in the sidebar, or with
+  Cmd-D for the one in the active tab. It opens straight into the form
+  with everything filled in, so adding twenty switches for one customer
+  is twenty names and addresses rather than twenty full forms. The
+  password comes across too; if it can't be read back, the copy says so
+  instead of failing to log in later.
+- An update will not restart MobaMac while a session is still
+  connected. It says how many, and offers to install anyway or wait --
+  waiting installs it the next time MobaMac is quit.
+- Settings shows when updates were last checked for.
 ## 1.16
 
 - MobaMac updates itself. It checks once a day, shows what changed, and

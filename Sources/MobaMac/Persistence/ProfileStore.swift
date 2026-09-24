@@ -212,6 +212,14 @@ final class ProfileStore: ObservableObject {
         return names.reversed().joined(separator: " / ")
     }
 
+    /// The device-type folder a session sits in, which is the second level
+    /// of the tree. A group with no parent is a customer, not a device type,
+    /// so it returns nil there.
+    func deviceTypeName(for groupID: UUID?) -> String? {
+        guard let groupID, let group = groups.first(where: { $0.id == groupID }) else { return nil }
+        return group.parentID == nil ? nil : group.name
+    }
+
     /// Walks a group's `parentID` chain up to its top-level (customer)
     /// ancestor. Used to decide "is this session under the same customer as
     /// that one" for broadcast's default-checked rule.

@@ -48,6 +48,23 @@ struct SnippetsPanelView: View {
                 List {
                     ForEach(snippetStore.snippets) { snippet in
                         HStack {
+                            // Ticking this is the only way into the button
+                            // bar, so the panel stays the one place snippets
+                            // are managed.
+                            Toggle("", isOn: Binding(
+                                get: { snippet.isInButtonBar },
+                                set: { newValue in
+                                    var updated = snippet
+                                    updated.showInButtonBar = newValue ? true : nil
+                                    if newValue, updated.buttonBarOrder == nil {
+                                        updated.buttonBarOrder = snippetStore.snippets.count
+                                    }
+                                    snippetStore.upsert(updated)
+                                }
+                            ))
+                            .labelsHidden()
+                            .help("Show this snippet as a button above the terminal.")
+
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(snippet.name).font(.body.bold())
@@ -99,10 +116,15 @@ struct SnippetsPanelView: View {
                         }
                     }
                     .onDelete(perform: deleteAtOffsets)
+                    // Dragging here is what sets the button bar's order, so
+                    // the row of buttons matches the list you are looking at.
+                    .onMove { offsets, destination in
+                        snippetStore.move(fromOffsets: offsets, toOffset: destination)
+                    }
                 }
             }
         }
-        .frame(width: 420, height: 360)
+        .frame(width: 460, height: 400)
         .sheet(isPresented: $showingNewSnippet) {
             SnippetEditSheet(snippetToEdit: nil, existingSnippets: snippetStore.snippets)
         }
@@ -159,6 +181,9 @@ private struct SnippetEditSheet: View {
     @State private var name: String
     @State private var command: String
     @State private var shortcutKey: String
+    @State private var deviceTypes: Set<SnippetDeviceType>
+    @State private var confirmBeforeRunning: Bool
+    @State private var showInButtonBar: Bool
 
     init(snippetToEdit: Snippet?, existingSnippets: [Snippet]) {
         editingID = snippetToEdit?.id
@@ -166,7 +191,13 @@ private struct SnippetEditSheet: View {
         _name = State(initialValue: snippetToEdit?.name ?? "")
         _command = State(initialValue: snippetToEdit?.command ?? "")
         _shortcutKey = State(initialValue: snippetToEdit?.shortcutKey ?? "")
+        _deviceTypes = State(initialValue: Set(snippetToEdit?.deviceTypes ?? []))
+        _confirmBeforeRunning = State(initialValue: snippetToEdit?.confirmBeforeRunning ?? false)
+        _showInButtonBar = State(initialValue: snippetToEdit?.isInButtonBar ?? false)
+        existingOrder = snippetToEdit?.buttonBarOrder
     }
+
+    private let existingOrder: Int?
 
     private var isValid: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && !command.isEmpty
@@ -206,6 +237,33 @@ private struct SnippetEditSheet: View {
                  : "Runs with ⌥⌘\(shortcutKey) from anywhere in the app, including while a terminal is focused.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Divider()
+
+            Toggle("Show in button bar", isOn: $showInButtonBar)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Show for device types")
+                    .font(.callout)
+                HStack(spacing: 10) {
+                    ForEach(SnippetDeviceType.allCases) { type in
+                        Toggle(type.rawValue, isOn: Binding(
+                            get: { deviceTypes.contains(type) },
+                            set: { isOn in
+                                if isOn { deviceTypes.insert(type) } else { deviceTypes.remove(type) }
+                            }
+                        ))
+                        .toggleStyle(.checkbox)
+                    }
+                }
+                Text("Leave all unticked to show this snippet for every session.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(!showInButtonBar)
+
+            Toggle("Confirm before running", isOn: $confirmBeforeRunning)
+                .help("Asks first. Worth turning on for commands like reload, write erase or commit force.")
+
             if let duplicateShortcutName {
                 Label(
                     "\"\(duplicateShortcutName)\" already uses ⌥⌘\(shortcutKey). Only one of them will run.",
@@ -223,7 +281,11 @@ private struct SnippetEditSheet: View {
                         id: editingID ?? UUID(),
                         name: name,
                         command: command,
-                        shortcutKey: shortcutKey.isEmpty ? nil : shortcutKey
+                        shortcutKey: shortcutKey.isEmpty ? nil : shortcutKey,
+                        showInButtonBar: showInButtonBar ? true : nil,
+                        buttonBarOrder: existingOrder ?? snippetStore.snippets.count,
+                        deviceTypes: deviceTypes.isEmpty ? nil : SnippetDeviceType.allCases.filter { deviceTypes.contains($0) },
+                        confirmBeforeRunning: confirmBeforeRunning ? true : nil
                     ))
                     dismiss()
                 }
