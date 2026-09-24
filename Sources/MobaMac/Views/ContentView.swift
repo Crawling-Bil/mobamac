@@ -61,7 +61,7 @@ struct ContentView: View {
             sessionManager.duplicateRequest = nil
         }
         .sheet(isPresented: $showingSFTP) {
-            if case .ssh(let ssh)? = sessionManager.activeSession?.kind {
+            if case .ssh(let ssh)? = sessionManager.focusedSession?.kind {
                 SFTPBrowserView(ssh: ssh)
             }
         }
@@ -130,7 +130,7 @@ struct ContentView: View {
             // Find bar above the button bar: it is transient and takes
             // keyboard focus, so it belongs nearest the thing it is acting
             // on rather than buried under a row of buttons.
-            if sessionManager.showFindBar, let session = sessionManager.activeSession {
+            if sessionManager.showFindBar, let session = sessionManager.focusedSession {
                 FindBarView(session: session, isPresented: $sessionManager.showFindBar)
             }
             if sessionManager.showButtonBar, !sessionManager.openSessions.isEmpty {
@@ -143,7 +143,7 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if let session = sessionManager.activeSession {
+            if let session = sessionManager.focusedSession {
                 StatusBarView(session: session)
             }
         }
@@ -167,15 +167,7 @@ struct ContentView: View {
             if sessionManager.openSessions.isEmpty {
                 emptyState
             } else {
-                ZStack {
-                    ForEach(sessionManager.openSessions) { session in
-                        let isActive = session.id == sessionManager.activeSessionID
-                        SessionTabView(session: session)
-                            .opacity(isActive ? 1 : 0)
-                            .allowsHitTesting(isActive)
-                            .zIndex(isActive ? 1 : 0)
-                    }
-                }
+                PaneContainerView()
             }
         }
         .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
@@ -183,7 +175,9 @@ struct ContentView: View {
         // tabs leaves the first responder on the terminal that just became
         // invisible, and typing goes into a tab nobody can see.
         .onChange(of: sessionManager.activeSessionID) { _, newValue in
-            guard let session = sessionManager.openSessions.first(where: { $0.id == newValue }) else { return }
+            sessionManager.reconcilePanes()
+            guard sessionManager.paneLayout == .single,
+                  let session = sessionManager.openSessions.first(where: { $0.id == newValue }) else { return }
             sessionManager.focusTerminal(of: session)
         }
     }
@@ -306,8 +300,10 @@ struct ContentView: View {
         .tint(sessionManager.broadcastTargetIDs.isEmpty ? nil : .red)
     }
 
+    /// The SSH session the toolbar acts on: the focused pane's, which in
+    /// Single layout is the active tab.
     private var activeSSHSession: SSHConnectionSession? {
-        if case .ssh(let ssh)? = sessionManager.activeSession?.kind {
+        if case .ssh(let ssh)? = sessionManager.focusedSession?.kind {
             return ssh
         }
         return nil
@@ -318,7 +314,7 @@ struct ContentView: View {
     /// disabled rather than silently doing nothing for other session kinds.
     @ViewBuilder
     private var highlightToggleItem: some View {
-        if activeSSHSession != nil, let session = sessionManager.activeSession {
+        if activeSSHSession != nil, let session = sessionManager.focusedSession {
             HighlightToggleButton(session: session)
         } else {
             Toggle("Highlight Output", isOn: .constant(false))
@@ -340,7 +336,7 @@ struct ContentView: View {
                 Button {
                     setTheme(theme.id)
                 } label: {
-                    if sessionManager.activeSession?.themeID == theme.id {
+                    if sessionManager.focusedSession?.themeID == theme.id {
                         Label(theme.name, systemImage: "checkmark")
                     } else {
                         Text(theme.name)
@@ -353,7 +349,7 @@ struct ContentView: View {
             // on, instead of leaving that stuck at the hardcoded
             // "Default (Terminal.app)" forever.
             Button("Set as Default for New Sessions") {
-                if let themeID = sessionManager.activeSession?.themeID {
+                if let themeID = sessionManager.focusedSession?.themeID {
                     TerminalTheme.appDefaultID = themeID
                 }
             }
@@ -372,7 +368,7 @@ struct ContentView: View {
     /// when a non-nil secret is passed, so this can't clobber a saved
     /// password/passphrase.
     private func setTheme(_ id: String) {
-        guard let session = sessionManager.activeSession else { return }
+        guard let session = sessionManager.focusedSession else { return }
         session.themeID = id
         var updated = session.profile
         updated.themeID = id
@@ -431,7 +427,7 @@ private struct HighlightToggleButton: View {
 /// `@Published connectionIssue` — a plain function called from inside
 /// ContentView's body wouldn't re-run just because a nested object's
 /// published property changed, only `@ObservedObject` gets that for free.
-private struct SessionTabView: View {
+struct SessionTabView: View {
     @ObservedObject var session: OpenSession
     @EnvironmentObject var sessionManager: SessionManager
     @State private var promptPassword = ""

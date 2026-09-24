@@ -221,6 +221,37 @@ struct MobaMacApp: App {
                     set: { sessionManager.showButtonBar = $0 }
                 ))
 
+                Menu("Layout") {
+                    ForEach(SessionManager.PaneLayout.allCases) { layout in
+                        Button {
+                            sessionManager.paneLayout = layout
+                        } label: {
+                            if sessionManager.paneLayout == layout {
+                                Label(layout.label, systemImage: "checkmark")
+                            } else {
+                                Text(layout.label)
+                            }
+                        }
+                    }
+                }
+                .disabled(sessionManager.openSessions.isEmpty)
+
+                // Only meaningful once there is more than one pane, and
+                // Control-Option keeps clear of the arrow keys the terminal
+                // itself needs.
+                Button("Focus Pane Left") { sessionManager.movePaneFocus(.left) }
+                    .keyboardShortcut(.leftArrow, modifiers: [.control, .option])
+                    .disabled(sessionManager.paneLayout == .single)
+                Button("Focus Pane Right") { sessionManager.movePaneFocus(.right) }
+                    .keyboardShortcut(.rightArrow, modifiers: [.control, .option])
+                    .disabled(sessionManager.paneLayout == .single)
+                Button("Focus Pane Up") { sessionManager.movePaneFocus(.up) }
+                    .keyboardShortcut(.upArrow, modifiers: [.control, .option])
+                    .disabled(sessionManager.paneLayout == .single)
+                Button("Focus Pane Down") { sessionManager.movePaneFocus(.down) }
+                    .keyboardShortcut(.downArrow, modifiers: [.control, .option])
+                    .disabled(sessionManager.paneLayout == .single)
+
                 Divider()
 
                 Button("Zoom In") {

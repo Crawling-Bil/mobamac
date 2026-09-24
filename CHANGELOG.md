@@ -38,6 +38,20 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   ask before running, which is worth doing for reload or write erase.
 - While broadcast is on, the button bar turns red and each button says
   how many sessions a click would reach.
+- The terminal area can be split, from View then Layout: side by side,
+  one above the other, or four at once. Each pane has a small menu in
+  its corner for choosing which open session it shows, and the dividers
+  can be dragged. A session appears in one pane at a time, so picking
+  one that is already on screen swaps the two panes.
+- Every pane tells its device the size of that pane, so long output
+  wraps and pages correctly in a narrow split instead of being laid out
+  for the full window. Dragging a divider sends the new size too.
+- The focused pane has an accent border, and Control-Option with the
+  arrow keys moves between panes. The status bar, the SFTP, Highlight
+  and Theme controls, the find bar and the button bar all follow the
+  focused pane rather than the active tab, so what the window says is
+  always the device you are typing into.
+- Closing a tab clears whichever pane was showing it.
 
 ## 1.17
 

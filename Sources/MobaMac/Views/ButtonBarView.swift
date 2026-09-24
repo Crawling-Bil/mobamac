@@ -23,7 +23,7 @@ struct ButtonBarView: View {
                     ForEach(visibleSnippets) { snippet in
                         Button(snippet.name) { run(snippet) }
                             .font(.caption)
-                            .disabled(sessionManager.activeSession == nil)
+                            .disabled(sessionManager.focusedSession == nil)
                             .help(helpText(for: snippet))
                     }
                 }
@@ -40,7 +40,7 @@ struct ButtonBarView: View {
     }
 
     private var deviceType: String? {
-        guard let profile = sessionManager.activeSession?.profile else { return nil }
+        guard let profile = sessionManager.focusedSession?.profile else { return nil }
         return profileStore.deviceTypeName(for: profile.groupID)
     }
 
@@ -51,7 +51,7 @@ struct ButtonBarView: View {
     /// How many sessions a click would actually reach, which is more than
     /// one only when this tab is itself a broadcast target.
     private var broadcastCount: Int {
-        guard let session = sessionManager.activeSession,
+        guard let session = sessionManager.focusedSession,
               sessionManager.broadcastTargetIDs.contains(session.id) else { return 0 }
         return sessionManager.broadcastTargetIDs.count
     }
@@ -64,7 +64,7 @@ struct ButtonBarView: View {
     }
 
     private func run(_ snippet: Snippet) {
-        guard sessionManager.activeSession != nil else { return }
+        guard sessionManager.focusedSession != nil else { return }
         if snippet.confirmBeforeRunning == true, !confirm(snippet) { return }
         // The same call the Snippets panel and the Snippets menu use, which
         // is also the path a keystroke takes, so broadcast applies exactly as

@@ -263,6 +263,139 @@ final class SessionManager: ObservableObject {
         duplicateRequest = DuplicateRequest(profile: profile)
     }
 
+    // MARK: - Panes
+
+    enum PaneLayout: String, CaseIterable, Identifiable {
+        case single
+        case splitHorizontally
+        case splitVertically
+        case grid
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .single: return "Single"
+            case .splitHorizontally: return "Split Horizontally"
+            case .splitVertically: return "Split Vertically"
+            case .grid: return "Grid 2x2"
+            }
+        }
+
+        var paneCount: Int {
+            switch self {
+            case .single: return 1
+            case .splitHorizontally, .splitVertically: return 2
+            case .grid: return 4
+            }
+        }
+    }
+
+    enum PaneDirection { case left, right, up, down }
+
+    @Published var paneLayout: PaneLayout = .single {
+        didSet { reconcilePanes() }
+    }
+    /// Which session each pane slot shows. Always four entries; only the
+    /// first `paneLayout.paneCount` are used.
+    @Published var paneSessionIDs: [OpenSession.ID?] = [nil, nil, nil, nil]
+    @Published var focusedPaneIndex = 0
+    /// Where the dividers sit, as a fraction of the area.
+    @Published var splitFractionX: CGFloat = 0.5
+    @Published var splitFractionY: CGFloat = 0.5
+
+    /// The session the window's chrome describes: the status bar's host and
+    /// log file, the SFTP, Highlight and Theme controls, the find bar and
+    /// the button bar.
+    ///
+    /// In a split, that is the focused pane and not the active tab. Getting
+    /// this wrong is the dangerous part of the feature: someone reading
+    /// "core-sw01" in the status bar while typing into the distribution
+    /// switch is how a command lands on the wrong device.
+    var focusedSession: OpenSession? {
+        guard paneLayout != .single else { return activeSession }
+        guard paneSessionIDs.indices.contains(focusedPaneIndex),
+              let id = paneSessionIDs[focusedPaneIndex],
+              let session = openSessions.first(where: { $0.id == id })
+        else { return activeSession }
+        return session
+    }
+
+    /// Which pane shows this session, if any. In Single layout the active
+    /// tab counts as pane 0 so the rest of the code needs no special case.
+    func paneIndex(of id: OpenSession.ID) -> Int? {
+        guard paneLayout != .single else { return id == activeSessionID ? 0 : nil }
+        return paneSessionIDs.prefix(paneLayout.paneCount).firstIndex(of: id)
+    }
+
+    /// Points a pane at a session.
+    ///
+    /// A session shows in at most one pane, so picking one that is already
+    /// on screen swaps the two rather than blanking the other pane. That
+    /// limit is real rather than arbitrary: a session owns one terminal
+    /// view, and two views for one output stream would leave one of them
+    /// dark.
+    func assignSession(_ id: OpenSession.ID?, toPane index: Int) {
+        guard paneSessionIDs.indices.contains(index) else { return }
+        if let id, let other = paneSessionIDs.firstIndex(of: id), other != index {
+            paneSessionIDs[other] = paneSessionIDs[index]
+        }
+        paneSessionIDs[index] = id
+        focusPane(index)
+    }
+
+    func focusPane(_ index: Int) {
+        guard index >= 0, index < paneLayout.paneCount else { return }
+        focusedPaneIndex = index
+        guard let id = paneSessionIDs[index],
+              let session = openSessions.first(where: { $0.id == id }) else { return }
+        focusTerminal(of: session)
+    }
+
+    func movePaneFocus(_ direction: PaneDirection) {
+        let current = focusedPaneIndex
+        let target: Int
+        switch (paneLayout, direction) {
+        case (.splitHorizontally, .left), (.splitVertically, .up):
+            target = 0
+        case (.splitHorizontally, .right), (.splitVertically, .down):
+            target = 1
+        case (.grid, .left):
+            target = current % 2 == 1 ? current - 1 : current
+        case (.grid, .right):
+            target = current % 2 == 0 ? current + 1 : current
+        case (.grid, .up):
+            target = current >= 2 ? current - 2 : current
+        case (.grid, .down):
+            target = current < 2 ? current + 2 : current
+        default:
+            return
+        }
+        focusPane(target)
+    }
+
+    /// Keeps the panes honest: a pane must never point at a tab that has
+    /// been closed, and a fresh split should not open onto blank rectangles.
+    func reconcilePanes() {
+        for index in paneSessionIDs.indices {
+            if let id = paneSessionIDs[index], !openSessions.contains(where: { $0.id == id }) {
+                paneSessionIDs[index] = nil
+            }
+        }
+        if focusedPaneIndex >= paneLayout.paneCount { focusedPaneIndex = 0 }
+        guard paneLayout != .single else { return }
+
+        var used = Set(paneSessionIDs.compactMap { $0 })
+        for index in 0..<paneLayout.paneCount where paneSessionIDs[index] == nil {
+            let preferred = index == 0 ? activeSession : nil
+            let candidate = (preferred.map { used.contains($0.id) ? nil : $0 } ?? nil)
+                ?? openSessions.first { !used.contains($0.id) }
+            guard let candidate else { break }
+            paneSessionIDs[index] = candidate.id
+            used.insert(candidate.id)
+        }
+    }
+
     // MARK: - Terminal search
 
     /// The result of a search, as the find bar shows it: "3 of 47".
@@ -410,7 +543,7 @@ final class SessionManager: ObservableObject {
     /// `TerminalView.send(txt:)` entry point a real keystroke would use, so
     /// there's no session-kind-specific plumbing needed here.
     func sendToActive(_ text: String) {
-        guard let view = activeSession?.terminalView else { return }
+        guard let view = focusedSession?.terminalView else { return }
         view.send(txt: text)
     }
 
@@ -936,6 +1069,9 @@ final class SessionManager: ObservableObject {
         // isn't open anymore — a red dot from an old attempt is more
         // confusing than useful once the tab is gone.
         connectionStates[session.profile.id] = .idle
+        // A pane pointing at a tab that no longer exists would render an
+        // empty rectangle with a stale name in its picker.
+        reconcilePanes()
     }
 
     /// Marks a profile connected and stamps `lastConnectedAt` on the saved

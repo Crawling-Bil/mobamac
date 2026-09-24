@@ -75,6 +75,7 @@ logs.
 | ⌃Tab / ⌃⇧Tab | Next / previous tab |
 | ⌘D | Duplicate the active tab's session |
 | ⌘F | Find in the active terminal's scrollback |
+| ⌃⌥ arrows | Move between panes in a split layout |
 | ⌘W | Close the active tab |
 | ⌘K | Command palette |
 | ⌘R | Reconnect, on a tab that dropped or failed |
