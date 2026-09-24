@@ -21,6 +21,20 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   has always drawn from.
 - The serial console hint was wrong about Aruba. CX switches default to
   115200, not 9600.
+- Sessions can send startup commands after connecting, one per line.
+  This is where "terminal length 0", "set cli pager off",
+  "screen-length 0 temporary" or "no page" belongs, so long output stops
+  arriving one page at a time. A credential set can carry a default list
+  for every session that uses it.
+- The commands wait for the device to be ready rather than being sent
+  the moment the connection opens, because a device is usually still
+  printing its login banner then and anything sent is discarded with no
+  error. A session can give a prompt pattern instead of waiting, and
+  Settings has an Advanced tab for the timing on slower devices.
+- Startup commands run again after every reconnect, since a device that
+  just rebooted is back to its default paging. They are never sent to
+  broadcast targets, and they appear in the session log like anything
+  else typed.
 
 ## 1.16
 

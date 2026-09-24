@@ -19,18 +19,24 @@ struct CredentialSet: Identifiable, Codable, Hashable {
     var username: String
     var authMethod: AuthMethod
     var privateKeyPath: String?
+    /// Startup commands for every session that uses this set, unless that
+    /// session defines its own. One place to put "terminal length 0" for a
+    /// whole customer's estate.
+    var startupCommands: String?
 
     init(
         id: UUID = UUID(),
         name: String,
         username: String = "",
         authMethod: AuthMethod = .password,
-        privateKeyPath: String? = nil
+        privateKeyPath: String? = nil,
+        startupCommands: String? = nil
     ) {
         self.id = id
         self.name = name
         self.username = username
         self.authMethod = authMethod
         self.privateKeyPath = privateKeyPath
+        self.startupCommands = startupCommands
     }
 }

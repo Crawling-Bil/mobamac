@@ -60,6 +60,8 @@ struct NewSessionSheet: View {
     @State private var keepaliveInterval: String
     @State private var autoReconnect: Bool
     @State private var credentialSetID: UUID?
+    @State private var startupCommands: String
+    @State private var promptPattern: String
     @State private var showingCredentialSets = false
 
     init(
@@ -87,6 +89,8 @@ struct NewSessionSheet: View {
         _keepaliveInterval = State(initialValue: profileToEdit.map { String($0.keepaliveInterval ?? 30) } ?? "30")
         _autoReconnect = State(initialValue: profileToEdit?.autoReconnect ?? false)
         _credentialSetID = State(initialValue: profileToEdit?.credentialSetID)
+        _startupCommands = State(initialValue: profileToEdit?.startupCommands ?? "")
+        _promptPattern = State(initialValue: profileToEdit?.promptPattern ?? "")
     }
 
     /// True only for a real edit. A duplicate also arrives with an id, but
@@ -227,6 +231,10 @@ struct NewSessionSheet: View {
                     .help("Retries every 15 seconds, up to 20 attempts, if the session disconnects. Off by default, because reconnecting during a reboot can reach the device before it has fully started.")
             }
 
+            if kind != .local {
+                startupCommandsSection
+            }
+
             if kind == .telnet {
                 Text("Telnet sends all data, including passwords, unencrypted. Use it only for legacy devices that don't support SSH.")
                     .font(.caption)
@@ -354,6 +362,28 @@ struct NewSessionSheet: View {
         }
     }
 
+    /// One command per line. Disabling paging is what almost everyone puts
+    /// here, and it has to be re-sent on every connect, so it belongs on the
+    /// profile rather than being typed each time.
+    @ViewBuilder
+    private var startupCommandsSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Startup commands")
+                .font(.callout)
+            TextEditor(text: $startupCommands)
+                .font(.system(.body, design: .monospaced))
+                .frame(height: 56)
+                .border(Color.secondary.opacity(0.3))
+            Text("Sent one line at a time after the device is ready.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextField("Wait for prompt pattern (optional)", text: $promptPattern)
+                .font(.system(.body, design: .monospaced))
+                .help("A regular expression matching this device's prompt. When set, commands are sent as soon as the output matches, instead of waiting for the output to go quiet.")
+        }
+    }
+
     private func save() {
         let trimmedCustomer = customer.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedGroupID: UUID? = trimmedCustomer.isEmpty
@@ -378,12 +408,18 @@ struct NewSessionSheet: View {
             profile.keepaliveInterval = Int(keepaliveInterval) ?? 30
             profile.autoReconnect = autoReconnect
             profile.credentialSetID = credentialSetID
+            profile.startupCommands = startupCommands.isEmpty ? nil : startupCommands
+            profile.promptPattern = promptPattern.isEmpty ? nil : promptPattern
         case .telnet:
             profile.host = host.trimmingCharacters(in: .whitespacesAndNewlines)
             profile.port = Int(port) ?? 23
+            profile.startupCommands = startupCommands.isEmpty ? nil : startupCommands
+            profile.promptPattern = promptPattern.isEmpty ? nil : promptPattern
         case .serial:
             profile.serialPortPath = serialPortPath
             profile.baudRate = baudRate
+            profile.startupCommands = startupCommands.isEmpty ? nil : startupCommands
+            profile.promptPattern = promptPattern.isEmpty ? nil : promptPattern
         case .local:
             break
         }

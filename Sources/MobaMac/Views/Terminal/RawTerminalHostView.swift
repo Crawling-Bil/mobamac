@@ -24,6 +24,7 @@ struct RawTerminalHostView: NSViewRepresentable {
                 terminalView?.feed(byteArray: [UInt8](data)[...])
             }
             openSession.logger.write(data)
+            openSession.startupRunner?.noteOutput(data)
         }
 
         return terminalView

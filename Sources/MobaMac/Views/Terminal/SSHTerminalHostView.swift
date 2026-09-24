@@ -33,6 +33,9 @@ struct SSHTerminalHostView: NSViewRepresentable {
             // A session log should never contain ANSI codes MobaMac injected
             // itself; that would make the log lie about what the device sent.
             openSession?.logger.write(data)
+            // Same callback, so the startup runner sees exactly what the
+            // device sent and can tell when it has gone quiet.
+            openSession?.startupRunner?.noteOutput(data)
 
             DispatchQueue.main.async {
                 guard let openSession else { return }

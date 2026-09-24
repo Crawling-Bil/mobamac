@@ -12,6 +12,8 @@ struct PreferencesView: View {
                 .tabItem { Label("Terminal", systemImage: "terminal") }
             LoggingPreferencesView()
                 .tabItem { Label("Logging", systemImage: "doc.text") }
+            AdvancedPreferencesView()
+                .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
         }
         .frame(width: 540, height: 280)
     }
@@ -113,6 +115,47 @@ private struct TerminalPreferencesView: View {
             Text("Right-clicking in the terminal pastes instead of opening the context menu. Control-click still opens the menu. Pasting several lines asks for confirmation either way.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        .formStyle(.grouped)
+        .padding()
+    }
+}
+
+private struct AdvancedPreferencesView: View {
+    @State private var quietMilliseconds = StartupCommandSettings.quietMilliseconds
+    @State private var lineDelayMilliseconds = StartupCommandSettings.lineDelayMilliseconds
+
+    var body: some View {
+        Form {
+            Text("Startup command timing")
+                .font(.callout)
+            Text("A device accepts the connection before its shell is reading input, so startup commands wait for it to stop sending first. Increase these for slow devices or consoles that print a long banner.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Wait for silence") {
+                HStack {
+                    TextField("", value: $quietMilliseconds, format: .number)
+                        .frame(width: 70)
+                        .onChange(of: quietMilliseconds) { _, newValue in
+                            StartupCommandSettings.quietMilliseconds = newValue
+                        }
+                    Text("ms")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabeledContent("Delay between commands") {
+                HStack {
+                    TextField("", value: $lineDelayMilliseconds, format: .number)
+                        .frame(width: 70)
+                        .onChange(of: lineDelayMilliseconds) { _, newValue in
+                            StartupCommandSettings.lineDelayMilliseconds = newValue
+                        }
+                    Text("ms")
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding()

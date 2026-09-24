@@ -61,6 +61,17 @@ struct SessionProfile: Identifiable, Codable, Hashable {
     /// a device that's mid-reboot can catch it in a half-booted state, so
     /// this has to be an explicit opt-in per profile, not a global default.
     var autoReconnect: Bool?
+    /// Commands sent once the device is ready, one per line. Almost always
+    /// the paging command: "terminal length 0", "set cli pager off",
+    /// "screen-length 0 temporary", "no page". Falls back to the credential
+    /// set's own list when this is empty, so a whole customer's switches can
+    /// share one.
+    var startupCommands: String?
+    /// A regular expression that says the device is ready for input, used
+    /// instead of waiting for output to go quiet. For the devices where the
+    /// quiet rule is not enough, typically because they keep printing a
+    /// banner. Empty means use the quiet rule.
+    var promptPattern: String?
 
     init(
         id: UUID = UUID(),
@@ -78,7 +89,9 @@ struct SessionProfile: Identifiable, Codable, Hashable {
         lastConnectedAt: Date? = nil,
         keepaliveInterval: Int? = nil,
         credentialSetID: UUID? = nil,
-        autoReconnect: Bool? = nil
+        autoReconnect: Bool? = nil,
+        startupCommands: String? = nil,
+        promptPattern: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -96,5 +109,7 @@ struct SessionProfile: Identifiable, Codable, Hashable {
         self.keepaliveInterval = keepaliveInterval
         self.credentialSetID = credentialSetID
         self.autoReconnect = autoReconnect
+        self.startupCommands = startupCommands
+        self.promptPattern = promptPattern
     }
 }

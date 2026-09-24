@@ -112,6 +112,10 @@ final class OpenSession: ObservableObject, Identifiable {
     /// connect and reconnect; left as-is on failure, where the status bar
     /// shows the failure instead because `connectionIssue` is set.
     @Published var connectedAt: Date?
+    /// Runs this tab's startup commands after each successful connect. Held
+    /// here so the terminal host views can feed it output and so a reconnect
+    /// can replace it rather than leaving two running at once.
+    var startupRunner: StartupCommandRunner?
 
     init(profile: SessionProfile, kind: OpenSessionKind, logger: SessionLogger) {
         self.profile = profile
@@ -436,6 +440,7 @@ final class SessionManager: ObservableObject {
             do {
                 try await ssh.start()
                 opened.connectedAt = Date()
+                self.startStartupCommands(for: opened, profile: profile)
                 self.markConnected(profile, provenSecret: opened.savesSecretOnConnect ? secret : nil)
             } catch {
                 if Self.isAuthenticationRejected(error), resolvedProfile.authMethod == .password, profile.credentialSetID == nil {
@@ -529,6 +534,7 @@ final class SessionManager: ObservableObject {
             do {
                 try await ssh1.start()
                 opened.connectedAt = Date()
+                self.startStartupCommands(for: opened, profile: originalProfile)
                 self.markConnected(originalProfile, provenSecret: opened.savesSecretOnConnect ? opened.sessionSecret : nil)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -557,6 +563,7 @@ final class SessionManager: ObservableObject {
             do {
                 try await telnet.start()
                 opened.connectedAt = Date()
+                self.startStartupCommands(for: opened, profile: profile)
                 self.markConnected(profile)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -588,6 +595,7 @@ final class SessionManager: ObservableObject {
             do {
                 try await serial.start()
                 opened.connectedAt = Date()
+                self.startStartupCommands(for: opened, profile: profile)
                 self.markConnected(profile)
             } catch {
                 opened.connectionIssue = Self.issue(from: error)
@@ -621,6 +629,7 @@ final class SessionManager: ObservableObject {
             do {
                 try await ssh.retryTrustingNewHostKey()
                 session.connectedAt = Date()
+                self.startStartupCommands(for: session, profile: session.profile)
                 self.markConnected(session.profile)
             } catch {
                 session.connectionIssue = Self.issue(from: error)
@@ -802,6 +811,7 @@ final class SessionManager: ObservableObject {
             oldLogger.close()
             session.reconnectAttempt = 0
             session.connectedAt = Date()
+            startStartupCommands(for: session, profile: profile)
             markConnected(profile, provenSecret: session.savesSecretOnConnect ? session.sessionSecret : nil)
         } catch {
             if Self.isAuthenticationRejected(error), profile.kind == .ssh, profile.authMethod == .password, profile.credentialSetID == nil {
@@ -862,6 +872,8 @@ final class SessionManager: ObservableObject {
         case .local:
             break
         }
+        session.startupRunner?.cancel()
+        session.startupRunner = nil
         session.logger.close()
         openSessions.removeAll { $0.id == session.id }
         broadcastTargetIDs.remove(session.id)
@@ -890,6 +902,41 @@ final class SessionManager: ObservableObject {
     /// proven to work is stored with the profile, in the Keychain like any
     /// saved session's. Never for a profile that takes its login from a
     /// credential set: that secret belongs to the set, not the profile.
+    /// Starts this tab's startup commands, replacing any runner left over
+    /// from a previous connection.
+    ///
+    /// Called on every successful connect, reconnect included: a device that
+    /// just rebooted is back to its default paging, so running these only on
+    /// the first connection would leave exactly the session that needs them
+    /// most without them.
+    private func startStartupCommands(for session: OpenSession, profile: SessionProfile) {
+        session.startupRunner?.cancel()
+        session.startupRunner = nil
+        guard let connection = Self.connection(of: session.kind) else { return }
+        let setCommands = profile.credentialSetID
+            .flatMap { credentialSetStore?.credentialSet(id: $0) }?
+            .startupCommands
+        guard let runner = StartupCommandRunner(
+            profile: profile,
+            credentialSetCommands: setCommands,
+            connection: connection
+        ) else { return }
+        session.startupRunner = runner
+        runner.start()
+    }
+
+    /// The local terminal has no ConnectionSession and needs no startup
+    /// commands: a local shell is already the shell.
+    private static func connection(of kind: OpenSessionKind) -> ConnectionSession? {
+        switch kind {
+        case .ssh(let ssh): return ssh
+        case .ssh1(let ssh1): return ssh1
+        case .telnet(let telnet): return telnet
+        case .serial(let serial): return serial
+        case .local: return nil
+        }
+    }
+
     private func markConnected(_ profile: SessionProfile, provenSecret: String? = nil) {
         connectionStates[profile.id] = .connected
         guard let profileStore else { return }

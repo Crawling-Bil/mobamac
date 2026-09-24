@@ -121,6 +121,7 @@ private struct CredentialSetEditSheet: View {
     @State private var username: String
     @State private var authMethod: AuthMethod
     @State private var privateKeyPath: String
+    @State private var startupCommands: String
     @State private var secret = ""
 
     init(setToEdit: CredentialSet?) {
@@ -129,6 +130,7 @@ private struct CredentialSetEditSheet: View {
         _username = State(initialValue: setToEdit?.username ?? "")
         _authMethod = State(initialValue: setToEdit?.authMethod ?? .password)
         _privateKeyPath = State(initialValue: setToEdit?.privateKeyPath ?? "")
+        _startupCommands = State(initialValue: setToEdit?.startupCommands ?? "")
     }
 
     private var isEditing: Bool { editingID != nil }
@@ -158,6 +160,18 @@ private struct CredentialSetEditSheet: View {
                     .foregroundStyle(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Startup commands")
+                    .font(.callout)
+                TextEditor(text: $startupCommands)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(height: 48)
+                    .border(Color.secondary.opacity(0.3))
+                Text("Used by sessions that don't define their own.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Text("Sessions using this credential set log in with these credentials. Changes here apply to all of them.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -180,7 +194,8 @@ private struct CredentialSetEditSheet: View {
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             username: username,
             authMethod: authMethod,
-            privateKeyPath: authMethod == .privateKey ? privateKeyPath : nil
+            privateKeyPath: authMethod == .privateKey ? privateKeyPath : nil,
+            startupCommands: startupCommands.isEmpty ? nil : startupCommands
         )
         credentialSetStore.upsert(set, secret: secret.isEmpty ? nil : secret)
         dismiss()
