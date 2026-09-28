@@ -143,6 +143,11 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Below the terminals and above the status bar: it belongs to
+            // no single pane, so it sits outside all of them.
+            if !sessionManager.broadcastTargetIDs.isEmpty {
+                BroadcastInputBar()
+            }
             if let session = sessionManager.focusedSession {
                 StatusBarView(session: session)
             }

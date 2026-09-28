@@ -48,16 +48,26 @@ enum MultiLinePasteGuard {
     /// `send` — those are AppKit input-event callbacks that already run on
     /// the main thread, and `NSAlert.runModal()` blocking there is the same
     /// thing any other "are you sure?" dialog does elsewhere in AppKit.
-    static func shouldSend(_ data: Data) -> Bool {
+    ///
+    /// `sessionCount` is more than one only for the broadcast bar, which
+    /// sends one text to several sessions. It comes through here rather than
+    /// through a check of its own, so there is exactly one multi-line
+    /// confirmation in the app and one "Don't ask again" that governs it.
+    static func shouldSend(_ data: Data, sessionCount: Int = 1) -> Bool {
         guard !isSuppressed else { return true }
         let count = lineCount(in: data)
         guard count >= 2 else { return true }
 
         let alert = NSAlert()
-        alert.messageText = "Paste \(count) lines?"
-        alert.informativeText = "Each line will be sent to this session as if typed, with Enter pressed after every one. If this isn't meant to run as a series of commands, cancel and check what's on your clipboard first."
+        if sessionCount > 1 {
+            alert.messageText = "Send \(count) lines to \(sessionCount) sessions?"
+            alert.informativeText = "Each line will be sent to every one of the \(sessionCount) sessions as if typed, with Enter pressed after every one. If this isn't meant to run as a series of commands, cancel and check what you pasted first."
+        } else {
+            alert.messageText = "Paste \(count) lines?"
+            alert.informativeText = "Each line will be sent to this session as if typed, with Enter pressed after every one. If this isn't meant to run as a series of commands, cancel and check what's on your clipboard first."
+        }
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Paste")
+        alert.addButton(withTitle: sessionCount > 1 ? "Send" : "Paste")
         alert.addButton(withTitle: "Cancel")
         alert.showsSuppressionButton = true
         alert.suppressionButton?.title = "Don't ask again"

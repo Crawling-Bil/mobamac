@@ -23,6 +23,13 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   stops once it is up. Terminal output is never animated and appears the
   moment it arrives. With Reduce Motion turned on in System Settings,
   nothing slides; only gentle fades remain.
+- A broadcast input bar appears above the status bar whenever broadcast
+  has targets. What you type there goes to every connected target at
+  once, without clicking into any one terminal first, and Up and Down
+  bring back earlier commands. Control-Command-L jumps to it from
+  anywhere. Commands such as reload or write erase ask first and say how
+  many sessions they will reach; the list is editable in Settings, under
+  Broadcast. Disconnected targets are skipped and the status bar says so.
 
 ## 1.18
 

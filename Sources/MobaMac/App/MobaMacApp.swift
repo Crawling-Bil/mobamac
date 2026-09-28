@@ -258,6 +258,15 @@ struct MobaMacApp: App {
                     .keyboardShortcut(.downArrow, modifiers: [.control, .option])
                     .disabled(sessionManager.paneLayout == .single)
 
+                // Listed here so the shortcut can be found. Disabled rather
+                // than hidden while nothing is a target, since the bar it
+                // focuses does not exist then.
+                Button("Focus Broadcast Input") {
+                    NotificationCenter.default.post(name: .focusBroadcastInput, object: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.control, .command])
+                .disabled(sessionManager.broadcastTargetIDs.isEmpty)
+
                 Divider()
 
                 Button("Zoom In") {

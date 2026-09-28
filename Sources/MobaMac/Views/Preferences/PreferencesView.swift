@@ -12,6 +12,8 @@ struct PreferencesView: View {
                 .tabItem { Label("Terminal", systemImage: "terminal") }
             LoggingPreferencesView()
                 .tabItem { Label("Logging", systemImage: "doc.text") }
+            BroadcastPreferencesView()
+                .tabItem { Label("Broadcast", systemImage: "dot.radiowaves.left.and.right") }
             AdvancedPreferencesView()
                 .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
         }
@@ -117,6 +119,41 @@ private struct TerminalPreferencesView: View {
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
+        .padding()
+    }
+}
+
+/// The commands the broadcast bar asks about before sending.
+private struct BroadcastPreferencesView: View {
+    @State private var patternsText = BroadcastSettings.confirmPatterns.joined(separator: "\n")
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Confirm before broadcasting")
+                .font(.callout)
+            Text("A command from the broadcast bar asks first when it contains any of these, one per line. Case and extra spaces are ignored. Abbreviations such as \"wr er\" are not recognized, so add the ones you use.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $patternsText)
+                .font(.system(size: 12, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(4)
+                .background(Color(nsColor: .textBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                )
+                .onChange(of: patternsText) { _, newValue in
+                    BroadcastSettings.confirmPatterns = newValue.components(separatedBy: .newlines)
+                }
+            HStack {
+                Spacer()
+                Button("Restore Defaults") {
+                    patternsText = BroadcastSettings.defaultPatterns.joined(separator: "\n")
+                }
+            }
+        }
         .padding()
     }
 }

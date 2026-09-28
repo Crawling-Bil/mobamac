@@ -168,6 +168,18 @@ final class SessionManager: ObservableObject {
     /// broadcasting to each other.
     @Published var broadcastTargetIDs: Set<OpenSession.ID> = []
 
+    /// Commands sent from the broadcast bar, oldest first, for its Up and
+    /// Down keys. Memory only, on purpose: it is a convenience for repeating
+    /// the last few commands, not a record, and the session logs are the
+    /// record.
+    private(set) var broadcastInputHistory: [String] = []
+    static let broadcastInputHistoryLimit = 50
+
+    /// A short message for the status bar that clears itself, for things
+    /// worth saying but not worth a dialog.
+    @Published private(set) var statusNotice: String?
+    private var statusNoticeClear: DispatchWorkItem?
+
     /// Toggled by the ⌘, menu-bar shortcut wired in MobaMacApp (same
     /// "menu key equivalents beat the first responder" trick already used
     /// for snippet shortcuts), lives here rather than as local ContentView
@@ -216,9 +228,14 @@ final class SessionManager: ObservableObject {
     /// into broadcast. Includes the session that originated the keystroke —
     /// it already rendered locally in that session's own TerminalView, this
     /// just replicates the same input to the others that are in scope.
-    func broadcast(_ data: Data, from senderID: OpenSession.ID) {
+    ///
+    /// `only` narrows the targets further, which is how the broadcast bar
+    /// leaves out targets that have disconnected. It can only narrow: a
+    /// session outside `broadcastTargetIDs` is never sent to.
+    func broadcast(_ data: Data, from senderID: OpenSession.ID?, only: Set<OpenSession.ID>? = nil) {
         for session in openSessions {
             guard broadcastTargetIDs.contains(session.id) else { continue }
+            if let only, !only.contains(session.id) { continue }
             switch session.kind {
             case .ssh(let ssh):
                 Task { await ssh.send(data) }
@@ -228,6 +245,101 @@ final class SessionManager: ObservableObject {
                 continue
             }
         }
+    }
+
+    // MARK: - Broadcast bar
+
+    /// Whether a broadcast target can take a command right now. Both checks,
+    /// because the dot state is kept per saved session and two tabs opened
+    /// from the same one share it; the tab's own issue is what says this
+    /// particular channel is gone.
+    func isReadyForBroadcast(_ session: OpenSession) -> Bool {
+        guard session.connectionIssue == nil,
+              connectionState(for: session.profile.id) == .connected else { return false }
+        switch session.kind {
+        case .ssh, .ssh1: return true
+        case .telnet, .serial, .local: return false
+        }
+    }
+
+    /// Sends one command from the broadcast bar to every connected target.
+    /// Returns whether it was sent, so the bar keeps the text when it was not.
+    ///
+    /// The order of the checks matters. Disconnected targets are dropped
+    /// first so both confirmations can name the number of sessions the
+    /// command will actually reach. The dangerous-command check comes before
+    /// the multi-line one because it is the one that names the command.
+    ///
+    /// The bytes go through `broadcast`, the same call a keystroke in a
+    /// broadcast tab uses, as "\r", which is what Return sends when typed.
+    /// Each device therefore echoes the command exactly as if it had been
+    /// typed there, and that echo is what lands in each session's log, so a
+    /// command from the bar leaves the same trace as a typed one. Nothing is
+    /// written into the logs by MobaMac itself, which would make them record
+    /// the app rather than the devices.
+    @discardableResult
+    func sendFromBroadcastInput(_ command: String) -> Bool {
+        let targets = openSessions.filter { broadcastTargetIDs.contains($0.id) }
+        let ready = targets.filter { isReadyForBroadcast($0) }
+        let skipped = targets.count - ready.count
+
+        guard !ready.isEmpty else {
+            showStatusNotice(
+                targets.count == 1
+                    ? "Not sent. The broadcast target is disconnected."
+                    : "Not sent. All \(targets.count) broadcast targets are disconnected."
+            )
+            return false
+        }
+
+        let count = ready.count
+        let sessionsText = count == 1 ? "1 session" : "\(count) sessions"
+
+        if BroadcastSettings.matchingPattern(in: command) != nil {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Send to \(sessionsText)?"
+            alert.informativeText = "\"\(command)\" will run on \(sessionsText)."
+            // Cancel first, so it is the default and Return does not send.
+            alert.addButton(withTitle: "Cancel")
+            let send = alert.addButton(withTitle: "Send")
+            send.hasDestructiveAction = true
+            send.keyEquivalent = ""
+            guard alert.runModal() == .alertSecondButtonReturn else { return false }
+        }
+
+        let normalized = command
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\n", with: "\r")
+        let payload = Data((normalized + "\r").utf8)
+        guard MultiLinePasteGuard.shouldSend(payload, sessionCount: count) else { return false }
+
+        broadcast(payload, from: nil, only: Set(ready.map(\.id)))
+
+        if !command.isEmpty, broadcastInputHistory.last != command {
+            broadcastInputHistory.append(command)
+            if broadcastInputHistory.count > Self.broadcastInputHistoryLimit {
+                broadcastInputHistory.removeFirst(broadcastInputHistory.count - Self.broadcastInputHistoryLimit)
+            }
+        }
+
+        if skipped > 0 {
+            showStatusNotice(
+                skipped == 1
+                    ? "Skipped 1 disconnected session."
+                    : "Skipped \(skipped) disconnected sessions."
+            )
+        }
+        return true
+    }
+
+    func showStatusNotice(_ text: String, seconds: Double = 4) {
+        statusNoticeClear?.cancel()
+        statusNotice = text
+        let clear = DispatchWorkItem { [weak self] in self?.statusNotice = nil }
+        statusNoticeClear = clear
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: clear)
     }
 
     func closeActive() {

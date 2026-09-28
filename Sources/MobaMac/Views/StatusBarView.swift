@@ -32,6 +32,7 @@ struct StatusBarView: View {
 
             Spacer(minLength: 12)
 
+            statusNotice
             logWarning
             broadcastIndicator
             logFileButton
@@ -157,6 +158,23 @@ struct StatusBarView: View {
                         : "Broadcast is on for \(count) other tab\(count == 1 ? "" : "s"). This tab is not a target."
                 )
         }
+    }
+
+    /// A message that clears itself after a few seconds, such as the
+    /// broadcast bar saying it skipped disconnected targets. Shown here, not
+    /// in a dialog, because nothing needs answering: the command already
+    /// went to the sessions that could take it.
+    private var statusNotice: some View {
+        ZStack {
+            if let notice = sessionManager.statusNotice {
+                Label(notice, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.fade(Motion.standard), value: sessionManager.statusNotice)
     }
 
     /// Shown when the chosen log folder could not be written to and the
