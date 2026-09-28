@@ -45,12 +45,12 @@ final class LoggingLocalProcessTerminalView: LocalProcessTerminalView, NSService
         }
     }
 
-    override func validRequestorForSendType(
-        _ sendType: NSPasteboard.PasteboardType?,
+    override func validRequestor(
+        forSendType sendType: NSPasteboard.PasteboardType?,
         returnType: NSPasteboard.PasteboardType?
     ) -> Any? {
         TerminalInteraction.servicesRequestor(sendType: sendType, returnType: returnType, in: self)
-            ?? super.validRequestorForSendType(sendType, returnType: returnType)
+            ?? super.validRequestor(forSendType: sendType, returnType: returnType)
     }
 
     func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
