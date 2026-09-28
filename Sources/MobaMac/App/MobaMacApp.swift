@@ -22,6 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // that's about to age out.
         LogRetentionManager.purgeExpiredLogs()
         installTabSwitchMonitor()
+        // Without this macOS never asks the terminal whether it can supply
+        // text, so every Service stays dimmed even with a selection and the
+        // responder methods that answer are never reached. Nothing is
+        // declared for the return direction on purpose: a Service that
+        // wrote text back would be typing it into the device.
+        NSApp.registerServicesMenuSendTypes([.string], returnTypes: [])
     }
 
     /// Control-Tab and Control-Shift-Tab, as an alternative to Cmd-Shift-[

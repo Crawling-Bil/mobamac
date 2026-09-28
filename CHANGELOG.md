@@ -3,6 +3,16 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.19
+
+- Text selected in the terminal now works with the Services menu, so
+  anything that takes text can be sent a few lines of output directly.
+  With nothing selected the items stay dimmed, as they should. MobaMac
+  only sends text out; services that write text back are not offered,
+  because that text would be typed into the device.
+- The find bar is easier to read: a taller bar, and a search field that
+  looks like a field, with a highlighted border while it has focus.
+
 ## 1.18
 
 - Wording across the app is consistent: one term per concept, no

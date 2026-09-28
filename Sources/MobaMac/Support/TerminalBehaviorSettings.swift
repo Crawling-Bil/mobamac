@@ -38,6 +38,46 @@ enum TerminalInteraction {
         pasteboard.setString(text, forType: .string)
     }
 
+    /// The text a Service would act on, or nil when nothing is selected.
+    static func selectedTextForServices(in view: TerminalView) -> String? {
+        guard let selection = view.selection, selection.active else { return nil }
+        let text = selection.getSelectedText()
+        return text.isEmpty ? nil : text
+    }
+
+    /// Answers the question macOS puts to the first responder when it builds
+    /// the Services menu: can you supply text for this?
+    ///
+    /// NSTextView answers it for free, which is why Services work everywhere
+    /// else. SwiftTerm never implements it at all, so every Service that
+    /// takes text stays dimmed over a terminal selection no matter how much
+    /// is highlighted.
+    ///
+    /// nil means "not me", and that is what keeps those items correctly
+    /// dimmed when nothing is selected. Only the sending direction is
+    /// offered: a Service that writes text back would be typing it straight
+    /// into whatever device is on the other end of the session.
+    static func servicesRequestor(
+        sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?,
+        in view: TerminalView
+    ) -> Any? {
+        guard sendType == .string, returnType == nil else { return nil }
+        return selectedTextForServices(in: view) == nil ? nil : view
+    }
+
+    /// Hands the selection to the Service on the pasteboard macOS supplied.
+    ///
+    /// Deliberately not the general pasteboard: using a Service would
+    /// otherwise overwrite whatever the user had copied, as a side effect
+    /// they never asked for.
+    static func writeSelection(to pasteboard: NSPasteboard, in view: TerminalView) -> Bool {
+        guard let text = selectedTextForServices(in: view) else { return false }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        return true
+    }
+
     /// True when the click was handled as a paste and the caller should not
     /// fall through to the context menu.
     static func handleRightClickPaste(_ event: NSEvent, in view: TerminalView) -> Bool {

@@ -22,12 +22,28 @@ struct FindBarView: View {
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
+            // A real field rather than a plain one. Borderless, it sat
+            // directly on the bar's own material with no edge of its own,
+            // so there was nothing to tell you where to type.
             TextField("Find in terminal", text: $term)
                 .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            fieldFocused ? Color.accentColor : Color(nsColor: .separatorColor),
+                            lineWidth: fieldFocused ? 2 : 1
+                        )
+                )
+                .frame(minWidth: 240)
                 .focused($fieldFocused)
                 .onSubmit {
                     // Shift-Return goes backwards. Read live, because
@@ -38,13 +54,17 @@ struct FindBarView: View {
                 .onChange(of: caseSensitive) { _, _ in step(forward: true) }
                 .onChange(of: useRegex) { _, _ in step(forward: true) }
 
+            // The one thing that stays small, and fixed so a narrow window
+            // squeezes the field rather than clipping the buttons.
             Text(countText)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
+                .fixedSize()
                 .frame(minWidth: 56, alignment: .trailing)
 
             Button { step(forward: false) } label: {
                 Image(systemName: "chevron.up")
+                    .font(.system(size: 12))
             }
             .buttonStyle(.borderless)
             .disabled(summary.total == 0)
@@ -52,6 +72,7 @@ struct FindBarView: View {
 
             Button { step(forward: true) } label: {
                 Image(systemName: "chevron.down")
+                    .font(.system(size: 12))
             }
             .buttonStyle(.borderless)
             .disabled(summary.total == 0)
@@ -59,21 +80,23 @@ struct FindBarView: View {
 
             Toggle("Aa", isOn: $caseSensitive)
                 .toggleStyle(.button)
+                .font(.system(size: 12))
                 .help("Match upper and lower case exactly.")
 
             Toggle(".*", isOn: $useRegex)
                 .toggleStyle(.button)
+                .font(.system(size: 12))
                 .help("Treat the search text as a regular expression.")
 
             Button { close() } label: {
                 Image(systemName: "xmark")
+                    .font(.system(size: 12))
             }
             .buttonStyle(.borderless)
             .help("Close the find bar (Esc).")
         }
-        .font(.caption)
-        .padding(.horizontal, 10)
-        .frame(height: 28)
+        .padding(.horizontal, 12)
+        .frame(height: 38)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
         .onExitCommand { close() }

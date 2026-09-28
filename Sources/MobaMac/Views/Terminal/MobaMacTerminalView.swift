@@ -7,7 +7,7 @@ import SwiftTerm
 /// can't use this class — it needs `LocalProcessTerminalView` as its base —
 /// so both subclasses call into `TerminalInteraction` rather than
 /// reimplementing anything.
-final class MobaMacTerminalView: TerminalView {
+final class MobaMacTerminalView: TerminalView, NSServicesMenuRequestor {
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         TerminalInteraction.copySelectionIfEnabled(in: self)
@@ -18,5 +18,21 @@ final class MobaMacTerminalView: TerminalView {
             super.rightMouseDown(with: event)
             return
         }
+    }
+
+    // MARK: - Services
+
+    override func validRequestorForSendType(
+        _ sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        TerminalInteraction.servicesRequestor(sendType: sendType, returnType: returnType, in: self)
+            ?? super.validRequestorForSendType(sendType, returnType: returnType)
+    }
+
+    // Not an override: NSView does not declare this, it comes from
+    // NSServicesMenuRequestor, which this class now conforms to.
+    func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        TerminalInteraction.writeSelection(to: pboard, in: self)
     }
 }

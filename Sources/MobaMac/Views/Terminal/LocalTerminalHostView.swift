@@ -21,7 +21,7 @@ import AppKit
 /// hop, so the normal resize -> sizeChanged -> pty TIOCSWINSZ path
 /// (already used correctly by the SSH and Raw host views) reaches the
 /// shell here too.
-final class LoggingLocalProcessTerminalView: LocalProcessTerminalView {
+final class LoggingLocalProcessTerminalView: LocalProcessTerminalView, NSServicesMenuRequestor {
     var onRawData: ((Data) -> Void)?
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
@@ -43,6 +43,18 @@ final class LoggingLocalProcessTerminalView: LocalProcessTerminalView {
             super.rightMouseDown(with: event)
             return
         }
+    }
+
+    override func validRequestorForSendType(
+        _ sendType: NSPasteboard.PasteboardType?,
+        returnType: NSPasteboard.PasteboardType?
+    ) -> Any? {
+        TerminalInteraction.servicesRequestor(sendType: sendType, returnType: returnType, in: self)
+            ?? super.validRequestorForSendType(sendType, returnType: returnType)
+    }
+
+    func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        TerminalInteraction.writeSelection(to: pboard, in: self)
     }
 }
 
