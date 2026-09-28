@@ -85,6 +85,12 @@ struct SidebarView: View {
     /// gesture instead of the menu button sitting right next to it. Two
     /// separate `Button`/`Menu` controls side by side in a plain `HStack`
     /// don't have that ambiguity.
+    /// The row under the pointer, whose actions button is showing. One
+    /// value for the whole sidebar since only one row can be hovered at a
+    /// time. It is a string rather than the row's UUID because the same
+    /// session can be on screen twice, under Recent and in its folder, and
+    /// hovering one copy must not light up the other.
+    @State private var hoveredRowKey: String?
     @State private var expandedCustomers: Set<UUID> = []
     @State private var expandedDeviceTypes: Set<UUID> = []
 
@@ -330,7 +336,7 @@ struct SidebarView: View {
 
             Spacer()
 
-            Menu {
+            rowActionsMenu(key: "customer-\(customer.id)", help: "Folder actions for \(customer.name).") {
                 Button {
                     activeSheet = .newFolder(presetCustomer: customer.name)
                 } label: {
@@ -341,13 +347,10 @@ struct SidebarView: View {
                 } label: {
                     Label("Delete Folder…", systemImage: "trash")
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Folder actions for \(customer.name).")
         }
+        .contentShape(Rectangle())
+        .onHover { updateHover("customer-\(customer.id)", inside: $0) }
 
         if expandedCustomers.contains(customer.id) {
             ForEach(profileStore.deviceTypeGroups(under: customer.id).sorted { $0.name < $1.name }) { deviceType in
@@ -379,19 +382,16 @@ struct SidebarView: View {
 
             Spacer()
 
-            Menu {
+            rowActionsMenu(key: "type-\(deviceType.id)", help: "Folder actions for \(deviceType.name).") {
                 Button(role: .destructive) {
                     groupPendingDelete = deviceType
                 } label: {
                     Label("Delete Folder…", systemImage: "trash")
                 }
-            } label: {
-                Image(systemName: "ellipsis.circle")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Folder actions for \(deviceType.name).")
         }
+        .contentShape(Rectangle())
+        .onHover { updateHover("type-\(deviceType.id)", inside: $0) }
 
         if expandedDeviceTypes.contains(deviceType.id) {
             ForEach(profiles(in: deviceType)) { profile in
@@ -423,43 +423,110 @@ struct SidebarView: View {
             .sorted { $0.name < $1.name }
     }
 
+    /// One session in the tree, in Recent, or in search results.
+    ///
+    /// The connect button and the actions menu sit side by side rather than
+    /// the menu living inside the button's label. A control nested inside
+    /// another control fights it for clicks, which is the same trap that
+    /// once made "Delete Folder" unreliable on the folder rows (see
+    /// `customerRow`). The button's label fills the row so the whole row is
+    /// still one click to connect, apart from the menu at the end.
     @ViewBuilder
     private func sessionRow(_ profile: SessionProfile, showBreadcrumb: Bool) -> some View {
         let breadcrumb = showBreadcrumb ? profileStore.breadcrumb(for: profile.groupID) : nil
-        Button {
-            pendingProfile = profile
-        } label: {
-            HStack(spacing: 6) {
-                StatusDot(state: sessionManager.connectionState(for: profile.id))
-                Image(systemName: icon(for: profile.kind))
-                    .help(kindHelpText(for: profile.kind))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(profile.name)
-                    if let breadcrumb {
-                        Text(breadcrumb)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+        let hoverKey = "session-\(profile.id)-\(showBreadcrumb ? "flat" : "tree")"
+        HStack(spacing: 6) {
+            Button {
+                pendingProfile = profile
+            } label: {
+                HStack(spacing: 6) {
+                    StatusDot(state: sessionManager.connectionState(for: profile.id))
+                    Image(systemName: icon(for: profile.kind))
+                        .help(kindHelpText(for: profile.kind))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(profile.name)
+                        if let breadcrumb {
+                            Text(breadcrumb)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            rowActionsMenu(key: hoverKey, help: "Actions for \(profile.name).") {
+                sessionActions(profile)
             }
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { updateHover(hoverKey, inside: $0) }
+        // Kept alongside the new button: right-click is already a habit, and
+        // both now open the same three actions.
         .contextMenu {
-            Button {
-                editingProfile = profile
-            } label: {
-                Label("Edit…", systemImage: "pencil")
-            }
-            Button {
-                duplicatingSession = SidebarView.draft(duplicating: profile, from: profileStore)
-            } label: {
-                Label("Duplicate", systemImage: "plus.square.on.square")
-            }
-            Button(role: .destructive) {
-                profileToDelete = profile
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
+            sessionActions(profile)
+        }
+    }
+
+    /// Edit, Duplicate and Delete for a session. Shared by the row's actions
+    /// button and its context menu so the two can never drift apart.
+    @ViewBuilder
+    private func sessionActions(_ profile: SessionProfile) -> some View {
+        Button {
+            editingProfile = profile
+        } label: {
+            Label("Edit…", systemImage: "pencil")
+        }
+        Button {
+            duplicatingSession = SidebarView.draft(duplicating: profile, from: profileStore)
+        } label: {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+        }
+        Button(role: .destructive) {
+            profileToDelete = profile
+        } label: {
+            Label("Delete…", systemImage: "trash")
+        }
+    }
+
+    /// The "…" button at the end of every sidebar row.
+    ///
+    /// `.primary` rather than the default tint, which in dark mode sat so
+    /// close to the sidebar's background that the button all but vanished.
+    /// `.menuIndicator(.hidden)` drops the disclosure chevron the borderless
+    /// style adds, which made one control look like two.
+    ///
+    /// Shown only while its row is hovered, and faded rather than removed so
+    /// it keeps its space: the row's text would otherwise shift sideways
+    /// every time the pointer crossed it.
+    private func rowActionsMenu<Content: View>(
+        key: String,
+        help: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Menu {
+            content()
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .foregroundStyle(.primary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .opacity(hoveredRowKey == key ? 1 : 0)
+        .help(help)
+    }
+
+    /// Moving from one row to the next can deliver the new row's enter before
+    /// the old row's exit, so an exit only clears the state if it still
+    /// belongs to the row that is leaving.
+    private func updateHover(_ key: String, inside: Bool) {
+        if inside {
+            hoveredRowKey = key
+        } else if hoveredRowKey == key {
+            hoveredRowKey = nil
         }
     }
 

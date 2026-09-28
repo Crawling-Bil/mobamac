@@ -12,6 +12,11 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   because that text would be typed into the device.
 - The find bar is easier to read: a taller bar, and a search field that
   looks like a field, with a highlighted border while it has focus.
+- Every session in the sidebar now has an actions button, showing Edit,
+  Duplicate and Delete, which used to be reachable only by right-click.
+  It appears when the pointer is over the row, as the folder buttons now
+  do too, and it is readable in dark mode, where the folder buttons had
+  almost disappeared.
 
 ## 1.18
 
