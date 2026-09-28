@@ -109,29 +109,31 @@ extension View {
 /// imitation of it.
 struct PressableBarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        PressableBarButtonBody(configuration: configuration)
     }
+}
 
-    private struct Body: View {
-        let configuration: ButtonStyleConfiguration
-        @Environment(\.isEnabled) private var isEnabled
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// Named apart from `ButtonStyle.Body` on purpose: a nested type called
+/// `Body` is taken by the compiler as the protocol's associated type.
+private struct PressableBarButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-        var body: some View {
-            configuration.label
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                )
-                .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
-                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
-                .animation(.easeOut(duration: Motion.press), value: configuration.isPressed)
-        }
+    var body: some View {
+        configuration.label
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+            .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+            .animation(.easeOut(duration: Motion.press), value: configuration.isPressed)
     }
 }
