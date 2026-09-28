@@ -15,8 +15,14 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
 - Every session in the sidebar now has an actions button, showing Edit,
   Duplicate and Delete, which used to be reachable only by right-click.
   It appears when the pointer is over the row, as the folder buttons now
-  do too, and it is readable in dark mode, where the folder buttons had
-  almost disappeared.
+  do too, and it takes the same colour as the text beside it in light and
+  dark mode, where the folder buttons had almost disappeared.
+- Small, quick motion where things change: folders open and close
+  smoothly, the tab underline follows the active tab, new tabs and panels
+  ease in, and the status dot pulses while a session is connecting and
+  stops once it is up. Terminal output is never animated and appears the
+  moment it arrives. With Reduce Motion turned on in System Settings,
+  nothing slides; only gentle fades remain.
 
 ## 1.18
 

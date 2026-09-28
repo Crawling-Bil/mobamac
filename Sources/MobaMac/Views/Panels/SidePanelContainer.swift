@@ -46,8 +46,14 @@ struct SidePanelContainer<Content: View>: View {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // The panel's width arrives in one step, because the terminal
+            // beside it is resized by it and every intermediate width would
+            // be sent to the device as a resize. Only what is drawn inside
+            // the panel slides in from the right.
+            .appearMotion(duration: Motion.panel, from: CGSize(width: 24, height: 0))
             .frame(minWidth: 300, idealWidth: 380, maxWidth: 620)
             .background(Color(nsColor: .windowBackgroundColor))
+            .clipped()
         }
     }
 
@@ -111,6 +117,7 @@ struct SidePanelContainer<Content: View>: View {
             .help("Close \(title).")
         }
         .padding(.vertical, 10)
+        .appearMotion(duration: Motion.standard)
         .frame(width: 32)
         .frame(maxHeight: .infinity)
         .background(.bar)

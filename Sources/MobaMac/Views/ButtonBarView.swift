@@ -23,6 +23,7 @@ struct ButtonBarView: View {
                     ForEach(visibleSnippets) { snippet in
                         Button(snippet.name) { run(snippet) }
                             .font(.caption)
+                            .buttonStyle(PressableBarButtonStyle())
                             .disabled(sessionManager.focusedSession == nil)
                             .help(helpText(for: snippet))
                     }

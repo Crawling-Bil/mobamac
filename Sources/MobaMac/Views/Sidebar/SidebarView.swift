@@ -10,21 +10,8 @@ private struct StatusDot: View {
     let state: SessionManager.ConnectionState
 
     var body: some View {
-        Group {
-            switch state {
-            case .idle:
-                Circle()
-                    .stroke(Color.secondary, lineWidth: 1)
-                    .frame(width: 7, height: 7)
-            case .connecting:
-                Circle().fill(Color.yellow).frame(width: 7, height: 7)
-            case .connected:
-                Circle().fill(Color.green).frame(width: 7, height: 7)
-            case .failed:
-                Circle().fill(Color.red).frame(width: 7, height: 7)
-            }
-        }
-        .help(helpText)
+        ConnectionDot(state: state)
+            .help(helpText)
     }
 
     private var helpText: String {
@@ -91,6 +78,7 @@ struct SidebarView: View {
     /// session can be on screen twice, under Recent and in its folder, and
     /// hovering one copy must not light up the other.
     @State private var hoveredRowKey: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedCustomers: Set<UUID> = []
     @State private var expandedDeviceTypes: Set<UUID> = []
 
@@ -324,10 +312,7 @@ struct SidebarView: View {
                 toggleCustomerExpanded(customer.id)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expandedCustomers.contains(customer.id) ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 10)
+                    disclosureChevron(expanded: expandedCustomers.contains(customer.id))
                     Label(customer.name, systemImage: "building.2")
                 }
             }
@@ -350,12 +335,14 @@ struct SidebarView: View {
             }
         }
         .contentShape(Rectangle())
+        .background(hoverBackground("customer-\(customer.id)"))
         .onHover { updateHover("customer-\(customer.id)", inside: $0) }
 
         if expandedCustomers.contains(customer.id) {
             ForEach(profileStore.deviceTypeGroups(under: customer.id).sorted { $0.name < $1.name }) { deviceType in
                 deviceTypeRow(deviceType, under: customer)
                     .padding(.leading, 16)
+                    .transition(.opacity)
             }
         }
     }
@@ -370,10 +357,7 @@ struct SidebarView: View {
                 toggleDeviceTypeExpanded(deviceType.id)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: expandedDeviceTypes.contains(deviceType.id) ? "chevron.down" : "chevron.right")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 10)
+                    disclosureChevron(expanded: expandedDeviceTypes.contains(deviceType.id))
                     Label(deviceType.name, systemImage: deviceTypeIcon(for: deviceType.name))
                 }
             }
@@ -391,30 +375,58 @@ struct SidebarView: View {
             }
         }
         .contentShape(Rectangle())
+        .background(hoverBackground("type-\(deviceType.id)"))
         .onHover { updateHover("type-\(deviceType.id)", inside: $0) }
 
         if expandedDeviceTypes.contains(deviceType.id) {
             ForEach(profiles(in: deviceType)) { profile in
                 sessionRow(profile, showBreadcrumb: false)
                     .padding(.leading, 16)
+                    .transition(.opacity)
             }
         }
     }
 
+    /// Opening a folder animates that one change: the rows it reveals or
+    /// hides, and its chevron. Nothing else in the list is given an
+    /// animation, so a sidebar of dozens of sessions stays smooth when a
+    /// folder is toggled over and over. Under Reduce Motion the rows appear
+    /// at once, since rows pushing each other down is movement.
     private func toggleCustomerExpanded(_ id: UUID) {
-        if expandedCustomers.contains(id) {
-            expandedCustomers.remove(id)
-        } else {
-            expandedCustomers.insert(id)
+        withAnimation(Motion.movement(Motion.standard, reduceMotion: reduceMotion)) {
+            if expandedCustomers.contains(id) {
+                expandedCustomers.remove(id)
+            } else {
+                expandedCustomers.insert(id)
+            }
         }
     }
 
     private func toggleDeviceTypeExpanded(_ id: UUID) {
-        if expandedDeviceTypes.contains(id) {
-            expandedDeviceTypes.remove(id)
-        } else {
-            expandedDeviceTypes.insert(id)
+        withAnimation(Motion.movement(Motion.standard, reduceMotion: reduceMotion)) {
+            if expandedDeviceTypes.contains(id) {
+                expandedDeviceTypes.remove(id)
+            } else {
+                expandedDeviceTypes.insert(id)
+            }
         }
+    }
+
+    /// Turns a quarter turn when its folder opens, rather than swapping for a
+    /// different symbol, which gave SwiftUI nothing to animate between.
+    private func disclosureChevron(expanded: Bool) -> some View {
+        Image(systemName: "chevron.right")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .rotationEffect(.degrees(expanded ? 90 : 0))
+            .animation(Motion.movement(Motion.standard, reduceMotion: reduceMotion), value: expanded)
+            .frame(width: 10)
+    }
+
+    private func hoverBackground(_ key: String) -> some View {
+        RoundedRectangle(cornerRadius: 5)
+            .fill(Color.primary.opacity(hoveredRowKey == key ? 0.07 : 0))
+            .animation(Motion.fade(Motion.rowHover), value: hoveredRowKey == key)
     }
 
     private func profiles(in deviceType: SessionGroup) -> [SessionProfile] {
@@ -462,6 +474,7 @@ struct SidebarView: View {
             }
         }
         .contentShape(Rectangle())
+        .background(hoverBackground(hoverKey))
         .onHover { updateHover(hoverKey, inside: $0) }
         // Kept alongside the new button: right-click is already a habit, and
         // both now open the same three actions.
@@ -493,10 +506,14 @@ struct SidebarView: View {
 
     /// The "…" button at the end of every sidebar row.
     ///
-    /// `.primary` rather than the default tint, which in dark mode sat so
-    /// close to the sidebar's background that the button all but vanished.
-    /// `.menuIndicator(.hidden)` drops the disclosure chevron the borderless
-    /// style adds, which made one control look like two.
+    /// The colour has to be set this particular way. With
+    /// `.menuStyle(.borderlessButton)` the label is drawn by AppKit, which
+    /// ignores SwiftUI's foreground style, so the icon kept the default
+    /// control colour and all but vanished in dark mode. The button menu
+    /// style with a plain button style keeps the label in SwiftUI, where
+    /// `Color.primary` applies: white in dark mode and black in light, the
+    /// same as the session names beside it. A fixed white would disappear in
+    /// light mode instead. The tint is belt and braces for the same colour.
     ///
     /// Shown only while its row is hovered, and faded rather than removed so
     /// it keeps its space: the row's text would otherwise shift sideways
@@ -510,12 +527,16 @@ struct SidebarView: View {
             content()
         } label: {
             Image(systemName: "ellipsis.circle")
-                .foregroundStyle(.primary)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(Color.primary)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .tint(Color.primary)
         .fixedSize()
         .opacity(hoveredRowKey == key ? 1 : 0)
+        .animation(Motion.fade(Motion.hover), value: hoveredRowKey == key)
         .help(help)
     }
 

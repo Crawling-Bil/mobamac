@@ -20,6 +20,12 @@ struct FindBarView: View {
     @State private var useRegex = false
     @State private var summary = SessionManager.FindSummary()
     @FocusState private var fieldFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the bar's own fade and short drop. The space the bar takes is
+    /// inserted and removed instantly by ContentView, so the terminal below
+    /// is resized exactly once each way; only the bar's contents move.
+    @State private var shown = false
+    @State private var closing = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -99,8 +105,14 @@ struct FindBarView: View {
         .frame(height: 38)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
+        .opacity(shown ? 1 : 0)
+        .offset(y: shown || reduceMotion ? 0 : -8)
+        .clipped()
         .onExitCommand { close() }
-        .onAppear { fieldFocused = true }
+        .onAppear {
+            fieldFocused = true
+            withAnimation(.easeOut(duration: Motion.findBarIn)) { shown = true }
+        }
         // Searching one session's scrollback and then switching tabs would
         // otherwise leave a stale count next to a different device.
         .onChange(of: session.id) { _, _ in
@@ -130,9 +142,16 @@ struct FindBarView: View {
     }
 
     private func close() {
+        guard !closing else { return }
+        closing = true
         sessionManager.clearTerminalSearch(in: session)
-        isPresented = false
-        // Focus goes back where typing belongs, rather than nowhere.
-        sessionManager.focusTerminal(of: session)
+        withAnimation(.easeIn(duration: Motion.findBarOut)) { shown = false }
+        // The bar's space is given back only once it has faded, in one step,
+        // so the terminal resizes once rather than following the animation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Motion.findBarOut) {
+            isPresented = false
+            // Focus goes back where typing belongs, rather than nowhere.
+            sessionManager.focusTerminal(of: session)
+        }
     }
 }

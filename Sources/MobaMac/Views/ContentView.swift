@@ -432,26 +432,25 @@ struct SessionTabView: View {
     @EnvironmentObject var sessionManager: SessionManager
     @State private var promptPassword = ""
     @State private var promptSavePassword = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Group {
+        // A ZStack rather than a Group so the issue screen can fade over the
+        // terminal as one leaves and the other arrives. The terminal itself
+        // never animates: it comes and goes with `.identity`, and its own
+        // updates are stripped of any animation, so output and its size are
+        // always applied at once.
+        ZStack {
             if let issue = session.connectionIssue {
                 connectionIssueView(issue)
+                    .transition(.opacity)
             } else {
-                switch session.kind {
-                case .ssh(let ssh):
-                    SSHTerminalHostView(openSession: session, ssh: ssh)
-                case .ssh1(let ssh1):
-                    RawTerminalHostView(openSession: session, connection: ssh1)
-                case .telnet(let telnet):
-                    RawTerminalHostView(openSession: session, connection: telnet)
-                case .serial(let serial):
-                    RawTerminalHostView(openSession: session, connection: serial)
-                case .local:
-                    LocalTerminalHostView(openSession: session)
-                }
+                terminalHost
+                    .transition(.identity)
+                    .transaction { $0.animation = nil }
             }
         }
+        .animation(Motion.fade(Motion.standard), value: session.connectionIssue == nil)
         // The toolbar's live theme picker changes `session.themeID` (a plain
         // `@Published` property the view tree doesn't otherwise read to
         // decide what to draw), so nothing above would notice the change on
@@ -460,6 +459,22 @@ struct SessionTabView: View {
         // onto the already-running SwiftTerm.TerminalView.
         .onChange(of: session.themeID) { _, newValue in
             session.terminalView?.apply(theme: TerminalTheme.theme(for: newValue))
+        }
+    }
+
+    @ViewBuilder
+    private var terminalHost: some View {
+        switch session.kind {
+        case .ssh(let ssh):
+            SSHTerminalHostView(openSession: session, ssh: ssh)
+        case .ssh1(let ssh1):
+            RawTerminalHostView(openSession: session, connection: ssh1)
+        case .telnet(let telnet):
+            RawTerminalHostView(openSession: session, connection: telnet)
+        case .serial(let serial):
+            RawTerminalHostView(openSession: session, connection: serial)
+        case .local:
+            LocalTerminalHostView(openSession: session)
         }
     }
 
@@ -504,8 +519,13 @@ struct SessionTabView: View {
                 .padding(.horizontal, 40)
             if session.reconnectAttempt > 0 {
                 Text("Reconnecting… \(session.reconnectAttempt)/\(SessionManager.maxAutoReconnectAttempts)")
-                    .font(.caption)
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
+                    .animation(
+                        Motion.movement(Motion.standard, reduceMotion: reduceMotion),
+                        value: session.reconnectAttempt
+                    )
             }
             if issue.needsPassword {
                 SecureField("Password", text: $promptPassword)

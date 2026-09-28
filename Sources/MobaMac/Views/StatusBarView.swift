@@ -17,9 +17,7 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 12) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(stateColor)
-                    .frame(width: 7, height: 7)
+                ConnectionDot(color: stateColor, pulsing: isConnecting)
                 Text(protocolLabel)
                     .font(.caption.weight(.semibold))
                 Text(target)
@@ -75,7 +73,16 @@ struct StatusBarView: View {
         }
     }
 
+    /// True while the tab is still negotiating, so the dot pulses instead of
+    /// claiming a green it has not earned yet. The pulse stops by itself the
+    /// moment the state moves on to connected or failed.
+    private var isConnecting: Bool {
+        session.connectionIssue == nil
+            && sessionManager.connectionState(for: session.profile.id) == .connecting
+    }
+
     private var stateColor: Color {
+        if isConnecting { return .yellow }
         guard let issue = session.connectionIssue else { return .green }
         if issue.isHostKeyMismatch { return .yellow }
         if issue.needsPassword || issue.isSessionEnded { return .secondary }
@@ -103,6 +110,9 @@ struct StatusBarView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
+            // The ticking duration is information, not decoration: it must
+            // never inherit an animation from a surrounding state change.
+            .transaction { $0.animation = nil }
             .help("How long this session has been connected.")
         }
     }
@@ -135,9 +145,12 @@ struct StatusBarView: View {
         if !sessionManager.broadcastTargetIDs.isEmpty {
             let count = sessionManager.broadcastTargetIDs.count
             let includesThisTab = sessionManager.broadcastTargetIDs.contains(session.id)
-            Label("Broadcast \(count)", systemImage: "dot.radiowaves.left.and.right")
-                .font(.caption.weight(includesThisTab ? .semibold : .regular))
-                .foregroundStyle(includesThisTab ? Color.red : Color.secondary)
+            BroadcastPulse(active: includesThisTab) {
+                Label("Broadcast \(count)", systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption.weight(includesThisTab ? .semibold : .regular))
+                    .foregroundStyle(includesThisTab ? Color.red : Color.secondary)
+            }
+            .appearMotion(duration: Motion.standard)
                 .help(
                     includesThisTab
                         ? "Broadcast is on and this tab is one of the \(count) targets, so what you type here is also sent to the others."
@@ -172,5 +185,28 @@ struct StatusBarView: View {
         }
         .buttonStyle(.link)
         .help("Everything this session prints is written here. Click to show the file in Finder.")
+    }
+}
+
+/// A slow, shallow breathing on the broadcast label while this tab's
+/// keystrokes are being copied elsewhere. It is a fade only, so it stays on
+/// under Reduce Motion, and it pauses entirely when the tab is not a target.
+private struct BroadcastPulse<Content: View>: View {
+    let active: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !active)) { context in
+            content()
+                .opacity(
+                    active
+                        ? Motion.pulseOpacity(
+                            at: context.date,
+                            period: Motion.broadcastPulsePeriod,
+                            low: Motion.broadcastPulseLow
+                        )
+                        : 1
+                )
+        }
     }
 }

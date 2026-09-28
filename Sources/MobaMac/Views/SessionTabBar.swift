@@ -13,34 +13,60 @@ struct SessionTabBar: View {
     /// Which tab is currently being dragged, shared with every tab's drop
     /// delegate so a drop knows what is being moved and where from.
     @State private var draggingID: OpenSession.ID?
+    /// Lets the accent underline travel from the old tab to the new one
+    /// instead of vanishing from one and appearing under the other.
+    @Namespace private var underlineNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 ForEach(sessionManager.openSessions) { session in
-                    SessionTabItem(
-                        session: session,
-                        isActive: session.id == sessionManager.activeSessionID
-                    )
-                    .onDrag {
-                        draggingID = session.id
-                        return NSItemProvider(object: session.id.uuidString as NSString)
-                    }
-                    .onDrop(
-                        of: [.text],
-                        delegate: TabReorderDropDelegate(
-                            target: session,
-                            sessionManager: sessionManager,
-                            draggingID: $draggingID
+                    // Tab and its divider move as one, so a closing tab does
+                    // not leave its divider behind for the length of the fade.
+                    HStack(spacing: 0) {
+                        SessionTabItem(
+                            session: session,
+                            isActive: session.id == sessionManager.activeSessionID,
+                            underlineNamespace: underlineNamespace
                         )
-                    )
-                    Divider().frame(height: 16)
+                        .onDrag {
+                            draggingID = session.id
+                            return NSItemProvider(object: session.id.uuidString as NSString)
+                        }
+                        .onDrop(
+                            of: [.text],
+                            delegate: TabReorderDropDelegate(
+                                target: session,
+                                sessionManager: sessionManager,
+                                draggingID: $draggingID
+                            )
+                        )
+                        Divider().frame(height: 16)
+                    }
+                    .transition(tabTransition)
                 }
             }
+            // Scoped to the tab strip. The panes below change on the same
+            // state, and the terminals in them must never animate, so this
+            // must not become a withAnimation around the state change.
+            .animation(Motion.movement(Motion.standard, reduceMotion: reduceMotion),
+                       value: sessionManager.activeSessionID)
+            .animation(Motion.movement(Motion.standard, reduceMotion: reduceMotion),
+                       value: sessionManager.openSessions.map(\.id))
         }
         .frame(height: 30)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// A new tab fades in from slightly to the left; a closing one just
+    /// fades, and the tabs after it close the gap.
+    private var tabTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: reduceMotion ? 0 : -8)),
+            removal: .opacity
+        )
     }
 }
 
@@ -51,13 +77,12 @@ private struct SessionTabItem: View {
     @ObservedObject var session: OpenSession
     @EnvironmentObject var sessionManager: SessionManager
     let isActive: Bool
+    let underlineNamespace: Namespace.ID
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
+            ConnectionDot(state: sessionManager.connectionState(for: session.profile.id))
                 .help(dotHelp)
 
             Text(session.title)
@@ -79,6 +104,7 @@ private struct SessionTabItem: View {
             }
             .buttonStyle(.plain)
             .opacity(isHovered ? 1 : 0)
+            .animation(Motion.fade(Motion.hover), value: isHovered)
             .allowsHitTesting(isHovered)
             .help("Close this tab.")
         }
@@ -86,24 +112,20 @@ private struct SessionTabItem: View {
         .frame(height: 30)
         .background(isActive ? Color.accentColor.opacity(0.15) : Color.clear)
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(isActive ? Color.accentColor : Color.clear)
-                .frame(height: 2)
+            // Drawn only under the active tab and matched across tabs, so
+            // SwiftUI slides one underline from the old position to the new.
+            if isActive {
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(height: 2)
+                    .matchedGeometryEffect(id: "active-tab-underline", in: underlineNamespace)
+            }
         }
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
         .onTapGesture { sessionManager.activeSessionID = session.id }
         .overlay { MiddleClickCatcher { sessionManager.requestClose(session) } }
         .help(session.title)
-    }
-
-    private var dotColor: Color {
-        switch sessionManager.connectionState(for: session.profile.id) {
-        case .connected: return .green
-        case .connecting: return .yellow
-        case .failed: return .red
-        case .idle: return .secondary
-        }
     }
 
     private var dotHelp: String {
@@ -129,7 +151,7 @@ private struct TabReorderDropDelegate: DropDelegate {
             let from = sessionManager.openSessions.firstIndex(where: { $0.id == draggingID }),
             let to = sessionManager.openSessions.firstIndex(where: { $0.id == target.id })
         else { return }
-        withAnimation(.easeInOut(duration: 0.15)) {
+        withAnimation(Motion.movement(Motion.hover)) {
             // `move(fromOffsets:toOffset:)` inserts *before* the offset it is
             // given, so dragging rightwards needs one extra to land after the
             // tab being crossed rather than swapping back and forth with it.
