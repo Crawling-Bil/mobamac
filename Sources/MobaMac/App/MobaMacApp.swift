@@ -93,7 +93,11 @@ struct MobaMacApp: App {
                 .environmentObject(sessionManager)
                 .environmentObject(snippetStore)
                 .environmentObject(credentialSetStore)
-                .frame(minWidth: 900, minHeight: 560)
+                // The smallest the window may be. 720 rather than the old
+                // 900 so it fits half of a laptop screen when tiled side by
+                // side with something else, which is where it was being
+                // squeezed and cut off.
+                .frame(minWidth: 720, minHeight: 480)
                 // Light/dark for the app's chrome only. The terminal is
                 // painted by TerminalTheme through SwiftTerm and never reads
                 // the color scheme, which is the point: a dark terminal in a
@@ -112,6 +116,14 @@ struct MobaMacApp: App {
                 }
         }
         .defaultSize(width: 1100, height: 680)
+        // Ties the window's own minimum size to what the content needs. The
+        // content already had a minimum, but the window did not know it, so
+        // it could be dragged or tiled narrower than its content and
+        // SwiftUI cut both edges off instead: the sidebar lost the start of
+        // every name and the toolbar lost its end. With this the window
+        // simply stops shrinking where the content would start to clip,
+        // including when a side panel opens and raises that minimum.
+        .windowResizability(.contentMinSize)
         // Menu-bar shortcuts, unlike a SwiftUI view modifier attached to
         // some on-screen control, keep working no matter which view has
         // focus — including the terminal's own NSView — because AppKit

@@ -30,6 +30,12 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   anywhere. Commands such as reload or write erase ask first and say how
   many sessions they will reach; the list is editable in Settings, under
   Broadcast. Disconnected targets are skipped and the status bar says so.
+- A narrow window no longer cuts off the sidebar and the toolbar. The
+  window used to shrink past what its content needed, most often when
+  tiled to half the screen, and both edges were clipped. It now stops at
+  the smallest size that fits, and that size is smaller than before, so
+  it still fits half of a laptop screen. Long session names end in "…"
+  instead of widening the sidebar.
 
 ## 1.18
 

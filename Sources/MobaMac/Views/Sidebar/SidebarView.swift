@@ -126,6 +126,9 @@ struct SidebarView: View {
                 groupedSessionsSection
             }
         }
+        // A known range for the column, so the split view never gives the
+        // sidebar less width than its rows are laid out for.
+        .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 420)
         .searchable(text: $searchText, prompt: "Search sessions")
         .help("Search saved sessions by name or host.")
         .toolbar { toolbarContent }
@@ -248,6 +251,7 @@ struct SidebarView: View {
             }
         } label: {
             Label("Ungrouped", systemImage: "questionmark.folder")
+                .lineLimit(1)
                 .help("Sessions with no customer or device type assigned.")
         }
     }
@@ -258,7 +262,7 @@ struct SidebarView: View {
     /// `.navigation` puts this at the leading end of the toolbar, next to
     /// the sidebar toggle, rather than in the trailing group that macOS
     /// collapses into the overflow menu first. That is what keeps it
-    /// visible at the window's 900pt minimum width, and it is why the
+    /// visible at the window's 720pt minimum width, and it is why the
     /// second copy of this menu that used to sit at the bottom of the
     /// sidebar could be removed: with `.navigation` placement plus a
     /// detail toolbar that is now four items instead of nine, nothing is
@@ -314,6 +318,8 @@ struct SidebarView: View {
                 HStack(spacing: 6) {
                     disclosureChevron(expanded: expandedCustomers.contains(customer.id))
                     Label(customer.name, systemImage: "building.2")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
             .buttonStyle(.plain)
@@ -359,6 +365,8 @@ struct SidebarView: View {
                 HStack(spacing: 6) {
                     disclosureChevron(expanded: expandedDeviceTypes.contains(deviceType.id))
                     Label(deviceType.name, systemImage: deviceTypeIcon(for: deviceType.name))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
             .buttonStyle(.plain)
@@ -456,9 +464,15 @@ struct SidebarView: View {
                     Image(systemName: icon(for: profile.kind))
                         .help(kindHelpText(for: profile.kind))
                     VStack(alignment: .leading, spacing: 0) {
+                        // One line each, cut short with "…" in a narrow
+                        // sidebar rather than wrapping or widening the row.
                         Text(profile.name)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         if let breadcrumb {
                             Text(breadcrumb)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }

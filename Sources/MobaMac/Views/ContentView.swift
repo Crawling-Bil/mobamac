@@ -175,7 +175,7 @@ struct ContentView: View {
                 PaneContainerView()
             }
         }
-        .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
         // Keyboard focus does not follow opacity: without this, switching
         // tabs leaves the first responder on the terminal that just became
         // invisible, and typing goes into a tab nobody can see.

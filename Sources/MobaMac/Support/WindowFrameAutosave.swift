@@ -26,9 +26,27 @@ struct WindowFrameAutosave: NSViewRepresentable {
             // by the time this view exists, SwiftUI has already shown the
             // window at its default size, so apply any saved frame explicitly.
             window.setFrameUsingName(Self.autosaveName)
+            Self.fitToScreen(window)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+
+    /// A frame saved on a large external display can be bigger than the
+    /// laptop screen it is restored on, leaving the window's edges off
+    /// screen. Shrink it to the visible area, but never below the window's
+    /// own minimum, and move it back onto the screen.
+    private static func fitToScreen(_ window: NSWindow) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        var frame = window.frame
+        frame.size.width = max(min(frame.width, visible.width), window.minSize.width)
+        frame.size.height = max(min(frame.height, visible.height), window.minSize.height)
+        frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        if frame != window.frame {
+            window.setFrame(frame, display: true)
+        }
+    }
 }
