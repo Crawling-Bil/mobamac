@@ -38,11 +38,24 @@ enum TerminalInteraction {
         pasteboard.setString(text, forType: .string)
     }
 
-    /// The text a Service would act on, or nil when nothing is selected.
+    /// The text a Service would act on, or nil when there is nothing worth
+    /// sending.
+    ///
+    /// The content is checked, not just the `active` flag. A selection can be
+    /// active and still hold nothing a Service can use: dragging past the
+    /// last prompt or triple-clicking an empty row gives back newlines and
+    /// spaces. Handing a Service that fails the same way as handing it an
+    /// empty string, with "There was a problem with the input to the
+    /// Service", so both count as no selection.
+    ///
+    /// When there is real text it goes across exactly as selected, trailing
+    /// whitespace included: in device output the spacing is often part of
+    /// what was meant to be copied.
     static func selectedTextForServices(in view: TerminalView) -> String? {
         guard let selection = view.selection, selection.active else { return nil }
         let text = selection.getSelectedText()
-        return text.isEmpty ? nil : text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
     }
 
     /// Answers the question macOS puts to the first responder when it builds
