@@ -383,7 +383,9 @@ struct SSHKeyExchangeStateMachine {
         if !overlaps(self.role.keyExchangeAlgorithmNames, message.keyExchangeAlgorithms) { missing.append("key exchange") }
         if !overlaps(self.supportedHostKeyAlgorithms, message.serverHostKeyAlgorithms) { missing.append("host key") }
         if !overlaps(self.supportedEncryptionAlgorithms, message.encryptionAlgorithmsServerToClient) { missing.append("cipher") }
-        if !overlaps(self.supportedMacAlgorithms, message.macAlgorithmsServerToClient) { missing.append("MAC") }
+        let agreedCipher = self.supportedEncryptionAlgorithms.first(where: { message.encryptionAlgorithmsServerToClient.contains($0) })
+        let cipherIsAEAD = agreedCipher.map { self.isAEAD($0) } ?? false
+        if !cipherIsAEAD, !overlaps(self.supportedMacAlgorithms, message.macAlgorithmsServerToClient) { missing.append("MAC") }
         return [
             "missing=\(missing.joined(separator: ", "))",
             "kex=\(list(message.keyExchangeAlgorithms))",
@@ -505,6 +507,16 @@ struct SSHKeyExchangeStateMachine {
             throw NIOSSHError.keyExchangeNegotiationFailure
         }
 
+        // MobaMac: an AEAD cipher (AES-GCM here) authenticates by itself, and
+        // OpenSSH's own rule is that the MAC list is then ignored for that
+        // direction rather than negotiated. Upstream negotiated it anyway,
+        // so a device offering only ETM MACs (hmac-sha2-*-etm@openssh.com)
+        // failed with "no MAC in common" even though AES-GCM was agreed.
+        if self.isAEAD(encryption) {
+            let mac = clientMACAlgorithms.first(where: { serverMACAlgorithms.contains($0) }) ?? Substring("none")
+            return (encryption, mac)
+        }
+
         // Ok great, now work out what we negotiated as a MAC.
         guard let mac = clientMACAlgorithms.first(where: { serverMACAlgorithms.contains($0) }) else {
             throw NIOSSHError.keyExchangeNegotiationFailure
@@ -551,6 +563,13 @@ struct SSHKeyExchangeStateMachine {
         case .server(let configuration):
             return configuration.hostKeys.flatMap { $0.hostKeyAlgorithms }
         }
+    }
+
+    /// MobaMac: a cipher whose schemes declare no MACs carries its own
+    /// authentication, so MAC negotiation does not apply to it.
+    private func isAEAD(_ cipher: Substring) -> Bool {
+        let schemes = self.transportProtectionSchemes.filter { $0.cipherName == cipher }
+        return !schemes.isEmpty && schemes.allSatisfy { $0.macNames.isEmpty }
     }
 
     /// The encryption algorithms supported by this peer, in order of preference.

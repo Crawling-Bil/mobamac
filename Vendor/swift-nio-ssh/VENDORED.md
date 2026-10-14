@@ -42,8 +42,10 @@ inside NIOSSH are here; the rest is in MobaMac's
 - `Key Exchange/SSHKeyExchangeStateMachine.swift`: the client offers
   `rsa-sha2-512` and `rsa-sha2-256` right after `ssh-rsa` whenever an
   "ssh-rsa" key type is registered; the host key check accepts an "ssh-rsa"
-  key for either name; MAC names offered are de-duplicated; and a failed
-  negotiation now carries what the peer offered (see below).
+  key for either name; MAC names offered are de-duplicated; MAC
+  negotiation is skipped when the agreed cipher is AEAD (AES-GCM), as
+  OpenSSH does, so devices offering only ETM MACs still connect; and a
+  failed negotiation now carries what the peer offered (see below).
 - `Keys And Signatures/NIOSSHSignature.swift`: reads the two signature
   types. `Keys And Signatures/NIOSSHPublicKey.swift`: routes them to
   `RSASHA2.verify` in both `isValidSignature` overloads.

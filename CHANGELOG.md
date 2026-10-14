@@ -13,6 +13,9 @@ Newest first. Version numbers match `CFBundleShortVersionString` in
   only aes256-ctr, aes192-ctr or diffie-hellman-group16-sha512. The older
   algorithms are offered last, so a device that connected before still
   connects exactly as it did.
+- Devices that allow only encrypt-then-MAC MACs (hmac-sha2-256-etm and
+  hmac-sha2-512-etm) connect over AES-GCM, which needs no separate MAC.
+  They used to fail with "no MAC algorithm in common".
 - When a device still has nothing in common with MobaMac, the error now
   lists what the device offers, per category, and says which category is
   the problem, instead of asking you to run ssh -vv in Terminal.
