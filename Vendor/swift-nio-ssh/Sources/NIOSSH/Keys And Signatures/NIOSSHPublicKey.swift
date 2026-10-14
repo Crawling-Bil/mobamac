@@ -93,6 +93,10 @@ extension NIOSSHPublicKey {
             return digest.withUnsafeBytes { digestPtr in
                 key.isValidSignature(sig, for: digestPtr)
             }
+        case (.custom(let key), .custom(let sig as RSASHA2Signature)):
+            return digest.withUnsafeBytes { digestPtr in
+                RSASHA2.verify(sig, by: key, over: Data(digestPtr))
+            }
         case (.custom(let key), .custom(let sig)):
             return digest.withUnsafeBytes { digestPtr in
                 key.isValidSignature(sig, for: digestPtr)
@@ -120,6 +124,8 @@ extension NIOSSHPublicKey {
             return key.isValidSignature(sig, for: bytes.readableBytesView)
         case (.ecdsaP521(let key), .ecdsaP521(let sig)):
             return key.isValidSignature(sig, for: bytes.readableBytesView)
+        case (.custom(let key), .custom(let sig as RSASHA2Signature)):
+            return RSASHA2.verify(sig, by: key, over: Data(bytes.readableBytesView))
         case (.custom(let key), .custom(let sig)):
             return key.isValidSignature(sig, for: bytes.readableBytesView)
         case (.certified(let key), _):

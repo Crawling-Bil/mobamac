@@ -251,7 +251,10 @@ struct SSHKeyExchangeStateMachine {
         case .keyExchangeInitSent(exchange: var exchanger, negotiated: let negotiated):
             switch self.role {
             case .client:
-                guard message.hostKey.keyPrefix.elementsEqual(negotiated.negotiatedHostKeyAlgorithm.utf8) else {
+                guard message.hostKey.keyPrefix.elementsEqual(negotiated.negotiatedHostKeyAlgorithm.utf8)
+                    || RSASHA2.keyPrefix(forHostKeyAlgorithm: negotiated.negotiatedHostKeyAlgorithm)
+                        .map({ message.hostKey.keyPrefix.elementsEqual($0.utf8) }) == true
+                else {
                     throw NIOSSHError.invalidHostKeyForKeyExchange(expected: negotiated.negotiatedHostKeyAlgorithm,
                                                                    got: message.hostKey.keyPrefix)
                 }
@@ -358,7 +361,39 @@ struct SSHKeyExchangeStateMachine {
         }
     }
 
+    /// MobaMac: wraps the negotiation so a failure says what the peer offered
+    /// and which list had nothing in common, instead of a bare
+    /// "keyExchangeNegotiationFailure" that leaves the user guessing.
     private func negotiatedAlgorithms(_ message: SSHMessage.KeyExchangeMessage) throws -> NegotiationResult {
+        do {
+            return try self.negotiatedAlgorithmsUnannotated(message)
+        } catch let error as NIOSSHError where error.type == .keyExchangeNegotiationFailure && error.diagnosticDetail == nil {
+            throw NIOSSHError.keyExchangeNegotiationFailed(detail: self.negotiationFailureDetail(message))
+        }
+    }
+
+    private func negotiationFailureDetail(_ message: SSHMessage.KeyExchangeMessage) -> String {
+        func overlaps(_ ours: [Substring], _ theirs: [Substring]) -> Bool {
+            ours.contains(where: { theirs.contains($0) })
+        }
+        func list(_ names: [Substring]) -> String {
+            names.isEmpty ? "(none)" : names.joined(separator: ", ")
+        }
+        var missing: [String] = []
+        if !overlaps(self.role.keyExchangeAlgorithmNames, message.keyExchangeAlgorithms) { missing.append("key exchange") }
+        if !overlaps(self.supportedHostKeyAlgorithms, message.serverHostKeyAlgorithms) { missing.append("host key") }
+        if !overlaps(self.supportedEncryptionAlgorithms, message.encryptionAlgorithmsServerToClient) { missing.append("cipher") }
+        if !overlaps(self.supportedMacAlgorithms, message.macAlgorithmsServerToClient) { missing.append("MAC") }
+        return [
+            "missing=\(missing.joined(separator: ", "))",
+            "kex=\(list(message.keyExchangeAlgorithms))",
+            "hostkey=\(list(message.serverHostKeyAlgorithms))",
+            "cipher=\(list(message.encryptionAlgorithmsServerToClient))",
+            "mac=\(list(message.macAlgorithmsServerToClient))",
+        ].joined(separator: "\n")
+    }
+
+    private func negotiatedAlgorithmsUnannotated(_ message: SSHMessage.KeyExchangeMessage) throws -> NegotiationResult {
         let (keyExchange, hostKey) = try self.negotiatedKeyExchangeAlgorithm(peerKeyExchangeAlgorithms: message.keyExchangeAlgorithms,
                                                                              peerHostKeyAlgorithms: message.serverHostKeyAlgorithms)
         let (clientEncryption, clientMAC) = try self.negotiatedTransportProtection(peerEncryptionAlgorithms: message.encryptionAlgorithmsClientToServer, peerMacAlgorithms: message.macAlgorithmsClientToServer)
@@ -525,8 +560,10 @@ struct SSHKeyExchangeStateMachine {
 
     /// The MAC algorithms supported by this peer, in order of preference.
     private var supportedMacAlgorithms: [Substring] {
+        // MobaMac: de-duplicated, keeping first-seen order, since several
+        // schemes list the same MACs and a name-list should not repeat.
         let schemes = self.transportProtectionSchemes.reduce([Substring]()) { schemes, transport in
-            schemes + transport.macNames.map { Substring($0) }
+            schemes + transport.macNames.map { Substring($0) }.filter { !schemes.contains($0) }
         }
 
         // We do a weird thing here: if there are no MAC schemes, we lie and put one in. This is
@@ -556,7 +593,20 @@ extension SSHKeyExchangeStateMachine {
         let bundledAlgorithms = bundledServerHostKeyAlgorithms
         let customAlgorithms = NIOSSHPublicKey.customPublicKeyAlgorithms.map { Substring($0.publicKeyPrefix) }
 
-        return bundledAlgorithms + customAlgorithms
+        // MobaMac: an RSA host key can also be verified with SHA-2 signatures
+        // (RFC 8332). Devices that disable SHA-1 offer only these names for
+        // their RSA key, so without them there is no host key in common.
+        // Listed after "ssh-rsa" so a device that offers both keeps
+        // negotiating exactly what it did before.
+        var withRSASHA2: [Substring] = []
+        for name in customAlgorithms {
+            withRSASHA2.append(name)
+            if name == Substring(RSASHA2.rsaKeyPrefix) {
+                withRSASHA2.append(contentsOf: RSASHA2.hostKeyAlgorithms)
+            }
+        }
+
+        return bundledAlgorithms + withRSASHA2
     }
 }
 

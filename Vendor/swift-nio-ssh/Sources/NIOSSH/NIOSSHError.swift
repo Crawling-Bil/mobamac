@@ -27,6 +27,11 @@ public struct NIOSSHError: Error {
     public var type: ErrorType
 
     private var diagnostics: String?
+
+    /// MobaMac: the extra detail behind this error, if any, without the
+    /// "NIOSSHError.type:" prefix `description` adds. Used to show what a
+    /// device offered when negotiation finds nothing in common.
+    public var diagnosticDetail: String? { self.diagnostics }
 }
 
 extension NIOSSHError: NIOSSHSendable {}
@@ -86,6 +91,12 @@ extension NIOSSHError {
     }
 
     internal static let keyExchangeNegotiationFailure = NIOSSHError(type: .keyExchangeNegotiationFailure, diagnostics: nil)
+
+    /// MobaMac: the same failure, carrying what the peer offered.
+    @inline(never)
+    internal static func keyExchangeNegotiationFailed(detail: String) -> NIOSSHError {
+        NIOSSHError(type: .keyExchangeNegotiationFailure, diagnostics: detail)
+    }
 
     @inline(never)
     internal static func unsupportedVersion(_ version: String) -> NIOSSHError {

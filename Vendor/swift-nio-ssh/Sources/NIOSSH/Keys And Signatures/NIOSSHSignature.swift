@@ -234,6 +234,11 @@ extension ByteBuffer {
             } else if bytesView.elementsEqual(NIOSSHSignature.ecdsaP521SignaturePrefix) {
                 return try buffer.readECDSAP521Signature()
             } else {
+                // MobaMac: RSA signatures with SHA-2 (RFC 8332).
+                if let rsa = try RSASHA2.readSignature(identifier: bytesView, from: &buffer) {
+                    return NIOSSHSignature(backingSignature: .custom(rsa))
+                }
+
                 for signature in NIOSSHPublicKey.customSignatures {
                     if bytesView.elementsEqual(signature.signaturePrefix.utf8) {
                         let signature = try signature.read(from: &buffer)

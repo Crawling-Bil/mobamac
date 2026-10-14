@@ -28,6 +28,32 @@ example client/server executables, performance tester, tests and the DocC
 plugin dependency are dropped). The NIOSSH target's sources and settings are
 otherwise unchanged.
 
+## MobaMac additions (1.20)
+
+Network devices that turned SHA-1 off, and devices too old to have anything
+else, both failed with "no algorithm in common". The parts that have to live
+inside NIOSSH are here; the rest is in MobaMac's
+`Sources/MobaMac/Connection/ExtraSSHAlgorithms.swift`.
+
+- `Keys And Signatures/RSASHA2.swift` (new): RSA host keys verified with
+  `rsa-sha2-256` and `rsa-sha2-512` signatures (RFC 8332), using the
+  Security framework. The key is still the "ssh-rsa" key Citadel registers;
+  only the signature hash differs.
+- `Key Exchange/SSHKeyExchangeStateMachine.swift`: the client offers
+  `rsa-sha2-512` and `rsa-sha2-256` right after `ssh-rsa` whenever an
+  "ssh-rsa" key type is registered; the host key check accepts an "ssh-rsa"
+  key for either name; MAC names offered are de-duplicated; and a failed
+  negotiation now carries what the peer offered (see below).
+- `Keys And Signatures/NIOSSHSignature.swift`: reads the two signature
+  types. `Keys And Signatures/NIOSSHPublicKey.swift`: routes them to
+  `RSASHA2.verify` in both `isValidSignature` overloads.
+- `NIOSSHError.swift`: `diagnosticDetail` exposes the detail string, and
+  `keyExchangeNegotiationFailed(detail:)` builds a negotiation failure with
+  lines `missing=`, `kex=`, `hostkey=`, `cipher=`, `mac=` listing what was
+  missing and the peer's lists. MobaMac shows these in its error screen.
+
+Each change is marked with a "MobaMac" comment in the source.
+
 ## Why not rewrite the banner instead
 
 Because it can't work. The server's version string is part of the key
@@ -40,5 +66,5 @@ as it is. (MobaMac 1.4 to 1.6 tried the rewrite approach; see CHANGELOG.md.)
 ## Updating
 
 If Citadel moves to a newer swift-nio-ssh, re-copy `Sources/NIOSSH` from the
-new version and re-apply the `validateVersion` change above, or drop this
-directory once upstream accepts "1.99".
+new version and re-apply the `validateVersion` change and the 1.20
+additions above, or drop this directory once upstream covers them.

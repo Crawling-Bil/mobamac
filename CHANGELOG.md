@@ -3,6 +3,20 @@
 Newest first. Version numbers match `CFBundleShortVersionString` in
 `Scripts/build-app.sh`, and each release is tagged `v<version>.0`.
 
+## 1.20
+
+- SSH reaches devices it used to turn away with "no SSH algorithm in
+  common". Devices that only sign their RSA host key with SHA-2, as current
+  switch and firewall firmware does once SHA-1 is switched off, now
+  connect. So do devices at the other end: old firmware that offers only
+  diffie-hellman-group1-sha1 or CBC ciphers, and hardened setups that allow
+  only aes256-ctr, aes192-ctr or diffie-hellman-group16-sha512. The older
+  algorithms are offered last, so a device that connected before still
+  connects exactly as it did.
+- When a device still has nothing in common with MobaMac, the error now
+  lists what the device offers, per category, and says which category is
+  the problem, instead of asking you to run ssh -vv in Terminal.
+
 ## 1.19
 
 - Text selected in the terminal now works with the Services menu, so

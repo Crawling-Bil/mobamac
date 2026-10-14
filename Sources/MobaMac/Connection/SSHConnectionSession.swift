@@ -85,10 +85,11 @@ final class SSHConnectionSession: ConnectionSession {
         // host key, the Cisco switches MobaMac targets included, and against
         // those the key exchange fails with no algorithm in common. `.all`
         // registers Citadel's ssh-rsa host key support plus aes128-ctr and
-        // diffie-hellman-group14. It appends to the preference lists rather
-        // than replacing them, so devices that negotiated fine before still
-        // pick exactly what they picked before.
-        settings.algorithms = .all
+        // diffie-hellman-group14; `.mobaMac` adds the older and the stricter
+        // algorithms in ExtraSSHAlgorithms on top. Everything is appended to
+        // the preference lists rather than replacing them, so devices that
+        // negotiated fine before still pick exactly what they picked before.
+        settings.algorithms = .mobaMac
 
         // NOTE: do not switch this to `SSHClient.connect(on: channel,)` in
         // order to slip an extra ChannelHandler in front of NIOSSHHandler
@@ -302,7 +303,7 @@ extension NIOSSHError {
         case .weakSharedSecret:
             return "The SSH key exchange produced a weak shared secret and was rejected. This usually means the device only offers an outdated Diffie-Hellman group, which is common on older routers, switches and firewalls. Check the device's SSH settings for a modern key-exchange algorithm (e.g. curve25519-sha256 or diffie-hellman-group14-sha256) and enable it if available."
         case .keyExchangeNegotiationFailure:
-            return "This device and MobaMac have no SSH algorithm in common. Either side can be the cause: older devices may only offer algorithms this app refuses (such as diffie-hellman-group1-sha1), while hardened devices may offer only RSA host keys signed with rsa-sha2-256/512, which MobaMac can't verify yet (it supports RSA host keys only as ssh-rsa). \"ssh -vv <user>@<host>\" from Terminal prints the device's offered lists under \"peer server KEXINIT proposal\"."
+            return Self.negotiationFailureMessage(detail: self.diagnosticDetail)
         case .unsupportedVersion:
             if self.description.contains("SSH-1.99") {
                 // Unreachable in a normal build: the vendored SSH library
@@ -322,6 +323,31 @@ extension NIOSSHError {
         default:
             return "SSH error: \(self.description). This is usually a protocol- or algorithm-level mismatch with the device rather than a plain network issue."
         }
+    }
+
+    /// The vendored NIOSSH reports what the device offered as lines of
+    /// "name=value": which lists had nothing in common, then the device's
+    /// key exchange, host key, cipher and MAC lists. Shown as they are,
+    /// because those names are exactly what goes into a bug report or a
+    /// device's SSH configuration.
+    static func negotiationFailureMessage(detail: String?) -> String {
+        var fields: [String: String] = [:]
+        for line in (detail ?? "").split(separator: "\n") {
+            guard let equals = line.firstIndex(of: "=") else { continue }
+            fields[String(line[..<equals])] = String(line[line.index(after: equals)...])
+        }
+        guard let missing = fields["missing"], !missing.isEmpty else {
+            return "This device and MobaMac have no SSH algorithm in common. \"ssh -vv <user>@<host>\" from Terminal prints the device's offered lists under \"peer server KEXINIT proposal\"."
+        }
+        var message = "This device and MobaMac have no SSH \(missing) algorithm in common. The device offers:"
+        let rows = [("kex", "Key exchange"), ("hostkey", "Host key"), ("cipher", "Cipher"), ("mac", "MAC")]
+        for (key, label) in rows {
+            if let value = fields[key] {
+                message += "\n\(label): \(value)"
+            }
+        }
+        message += "\nEnabling any algorithm MobaMac supports on the device fixes this; send these lists along with a report if it should be supported."
+        return message
     }
 }
 

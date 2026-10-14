@@ -23,7 +23,11 @@ let package = Package(
         // In-app updates from GitHub Releases, so a new version is
         // "Install Update" instead of download, unzip, delete the old app,
         // drag the new one. See README "Auto-update".
-        .package(url: "https://github.com/sparkle-project/Sparkle.git", .upToNextMajor(from: "2.6.0"))
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", .upToNextMajor(from: "2.6.0")),
+        // Arbitrary-precision integers for the Diffie-Hellman groups in
+        // Connection/ExtraSSHAlgorithms.swift. Already in the graph through
+        // Citadel, at the version Package.resolved pins.
+        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.2.0")
     ],
     targets: [
         // Shim exposing Apple's CommonCrypto (DES/3DES) to Swift -- needed
@@ -39,7 +43,8 @@ let package = Package(
                 .product(name: "ORSSerial", package: "ORSSerialPort"),
                 .product(name: "NIOSSH", package: "swift-nio-ssh"),
                 "CCommonCrypto",
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "BigInt", package: "BigInt")
             ],
             path: "Sources/MobaMac",
             // Manifest needs tools-version 6.0 for .macOS(.v15) above, but the
