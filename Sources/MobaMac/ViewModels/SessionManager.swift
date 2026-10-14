@@ -1284,7 +1284,10 @@ final class SessionManager: ObservableObject {
             message = localizedMessage
         } else if let sshError = error as? NIOSSHError {
             message = sshError.friendlyDescription
-        } else if String(describing: error).contains("ClientHandshakeHandler") {
+        } else if String(reflecting: type(of: error)).contains("ClientHandshakeHandler")
+                    || String(describing: error) == "Disconnected()" {
+            // `String(describing:)` of that marker is just "Disconnected()";
+            // the enclosing type only shows up in the reflected type name.
             // Citadel's ClientHandshakeHandler fails its handshake promise
             // with a bare, private `Disconnected` marker error (see its
             // `deinit`) whenever the channel tears down before the SSH
@@ -1295,7 +1298,7 @@ final class SessionManager: ObservableObject {
             // only option, but it beats showing the raw
             // "(unknown context at $...)" memory-address text this prints
             // as by default.
-            message = "The connection closed before the SSH handshake even started, and no specific SSH error was reported. This usually means something outside the app is responsible: a firewall/NAT dropped the connection, or the device only allows SSH from specific source IPs. Try \"ssh -vvv <user>@<host>\" from Terminal on this Mac. If that fails the same way, it confirms this isn't an app issue."
+            message = "The device closed the connection before login finished, without giving a reason. Usually the device rejected something in the SSH handshake, only accepts SSH from certain addresses, or a firewall dropped the session. \"ssh -vv <user>@<host>\" from Terminal shows how far a standard client gets; if it gets in, send its output with a report."
         } else if let channelError = error as? ChannelError {
             message = Self.describe(channelError)
         } else if case SSHClientError.allAuthenticationOptionsFailed = error {

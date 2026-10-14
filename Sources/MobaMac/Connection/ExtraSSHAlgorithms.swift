@@ -22,6 +22,9 @@ enum ExtraSSHAlgorithms {
     static let transportProtectionSchemes: [NIOSSHTransportProtection.Type] = [
         CommonCryptoTransport<AES256CTRSpec>.self,
         CommonCryptoTransport<AES192CTRSpec>.self,
+        // Also aes128-ctr, after Citadel's own: Citadel's handles the plain
+        // MACs as before, this one is what takes the ETM MACs it lacks.
+        CommonCryptoTransport<AES128CTRSpec>.self,
         CommonCryptoTransport<AES256CBCSpec>.self,
         CommonCryptoTransport<AES192CBCSpec>.self,
         CommonCryptoTransport<AES128CBCSpec>.self,
@@ -85,20 +88,38 @@ enum ExtraSSHAlgorithmError: LocalizedError {
 // MARK: - MACs
 
 /// The MACs the CommonCrypto ciphers accept, most preferred first.
+///
+/// The "-etm@openssh.com" forms (encrypt-then-MAC) use the same HMACs over
+/// a different part of the packet. They matter beyond the ciphers here:
+/// current switch firmware often offers nothing else, and some SSH servers
+/// insist on a MAC in common even when AES-GCM, which ignores the MAC, is
+/// the cipher agreed. Offering them gives such a server its match.
 enum SSHMac {
     case sha256
     case sha512
     case sha1
 
-    static let names = ["hmac-sha2-256", "hmac-sha2-512", "hmac-sha1"]
+    static let etmSuffix = "-etm@openssh.com"
+
+    static let names = [
+        "hmac-sha2-256-etm@openssh.com",
+        "hmac-sha2-512-etm@openssh.com",
+        "hmac-sha2-256",
+        "hmac-sha2-512",
+        "hmac-sha1",
+    ]
 
     init?(name: String?) {
         switch name {
-        case "hmac-sha2-256": self = .sha256
-        case "hmac-sha2-512": self = .sha512
+        case "hmac-sha2-256", "hmac-sha2-256-etm@openssh.com": self = .sha256
+        case "hmac-sha2-512", "hmac-sha2-512-etm@openssh.com": self = .sha512
         case "hmac-sha1": self = .sha1
         default: return nil
         }
+    }
+
+    static func isEncryptThenMAC(_ name: String?) -> Bool {
+        name?.hasSuffix(self.etmSuffix) ?? false
     }
 
     /// Key length and tag length, which are the same for these three.
@@ -154,6 +175,14 @@ enum AES256CTRSpec: SSHBlockCipherSpec {
     static let blockSize = 16
 }
 
+enum AES128CTRSpec: SSHBlockCipherSpec {
+    static let name = "aes128-ctr"
+    static let algorithm = CCAlgorithm(kCCAlgorithmAES)
+    static let mode = CCMode(kCCModeCTR)
+    static let keySize = 16
+    static let blockSize = 16
+}
+
 enum AES192CTRSpec: SSHBlockCipherSpec {
     static let name = "aes192-ctr"
     static let algorithm = CCAlgorithm(kCCAlgorithmAES)
@@ -194,9 +223,15 @@ enum TripleDESCBCSpec: SSHBlockCipherSpec {
     static let blockSize = 8
 }
 
-/// A block cipher with an HMAC (encrypt-and-MAC, RFC 4253 section 6),
-/// done with CommonCrypto, so CTR and CBC both keep their running state
-/// from one packet to the next inside the cryptor, as SSH requires.
+/// A block cipher with an HMAC, done with CommonCrypto, so CTR and CBC
+/// both keep their running state from one packet to the next inside the
+/// cryptor, as SSH requires.
+///
+/// Two framings, picked by the MAC name. Plain MACs are encrypt-and-MAC
+/// (RFC 4253 section 6): the whole packet, length included, is encrypted,
+/// and the MAC covers the plaintext. The "-etm@openssh.com" MACs are
+/// encrypt-then-MAC: the length stays in the clear, everything after it is
+/// encrypted, and the MAC covers the length and the ciphertext.
 final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProtection {
     static var cipherName: String { Spec.name }
     static var macNames: [String] { SSHMac.names }
@@ -212,16 +247,18 @@ final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProt
     var macBytes: Int { self.mac.length }
 
     private let mac: SSHMac
+    private let encryptThenMAC: Bool
     private var encryptor: CCCryptorRef?
     private var decryptor: CCCryptorRef?
     private var outboundMACKey: SymmetricKey
     private var inboundMACKey: SymmetricKey
 
-    init(initialKeys: NIOSSHSessionKeys, mac: String?) throws {
-        guard let mac = SSHMac(name: mac) else {
-            throw ExtraSSHAlgorithmError.unsupportedMAC(mac ?? "none")
+    init(initialKeys: NIOSSHSessionKeys, mac name: String?) throws {
+        guard let mac = SSHMac(name: name) else {
+            throw ExtraSSHAlgorithmError.unsupportedMAC(name ?? "none")
         }
         self.mac = mac
+        self.encryptThenMAC = SSHMac.isEncryptThenMAC(name)
         self.outboundMACKey = initialKeys.outboundMACKey
         self.inboundMACKey = initialKeys.inboundMACKey
         try self.install(initialKeys)
@@ -309,6 +346,8 @@ final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProt
     }
 
     func decryptFirstBlock(_ source: inout ByteBuffer) throws {
+        // Encrypt-then-MAC leaves the length in the clear: nothing to do.
+        if self.encryptThenMAC { return }
         guard let first = source.getBytes(at: source.readerIndex, length: Spec.blockSize) else {
             throw ExtraSSHAlgorithmError.invalidPacket
         }
@@ -317,6 +356,9 @@ final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProt
     }
 
     func decryptAndVerifyRemainingPacket(_ source: inout ByteBuffer, sequenceNumber: UInt32) throws -> ByteBuffer {
+        if self.encryptThenMAC {
+            return try self.decryptEncryptThenMAC(&source, sequenceNumber: sequenceNumber)
+        }
         let blockSize = Spec.blockSize
         let macLength = self.mac.length
         // The first block was decrypted in place by `decryptFirstBlock`.
@@ -344,7 +386,39 @@ final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProt
         return ByteBuffer(bytes: packet[5..<payloadEnd])
     }
 
+    /// uint32 length (clear) || encrypted(padding length, payload, padding) || MAC,
+    /// where MAC = HMAC(sequence number || length || ciphertext). The MAC is
+    /// checked before anything is decrypted.
+    private func decryptEncryptThenMAC(_ source: inout ByteBuffer, sequenceNumber: UInt32) throws -> ByteBuffer {
+        let macLength = self.mac.length
+        guard
+            source.readableBytes >= 4 + Spec.blockSize + macLength,
+            let lengthBytes = source.readBytes(length: 4),
+            let ciphertext = source.readBytes(length: source.readableBytes - macLength),
+            let receivedMAC = source.readBytes(length: macLength),
+            ciphertext.count % Spec.blockSize == 0
+        else {
+            throw ExtraSSHAlgorithmError.invalidPacket
+        }
+
+        let expectedMAC = self.mac.authenticate(sequenceNumber: sequenceNumber, packet: lengthBytes + ciphertext, key: self.inboundMACKey)
+        guard SSHMac.constantTimeEqual(expectedMAC, receivedMAC) else {
+            throw ExtraSSHAlgorithmError.macMismatch
+        }
+
+        // byte padding_length, payload, padding.
+        let body = try self.run(self.decryptor, ciphertext)
+        guard let paddingByte = body.first else { throw ExtraSSHAlgorithmError.invalidPacket }
+        let payloadEnd = body.count - Int(paddingByte)
+        guard payloadEnd >= 1 else { throw ExtraSSHAlgorithmError.invalidPacket }
+        return ByteBuffer(bytes: body[1..<payloadEnd])
+    }
+
     func encryptPacket(_ packet: NIOSSHEncryptablePayload, to outboundBuffer: inout ByteBuffer, sequenceNumber: UInt32) throws {
+        if self.encryptThenMAC {
+            try self.encryptEncryptThenMAC(packet, to: &outboundBuffer, sequenceNumber: sequenceNumber)
+            return
+        }
         // RFC 4253 section 6: length || padding length || payload || padding
         // must be a multiple of the block size (at least 8) and at least 16
         // bytes, with 4 to 255 bytes of random padding.
@@ -369,6 +443,36 @@ final class CommonCryptoTransport<Spec: SSHBlockCipherSpec>: NIOSSHTransportProt
         let tag = self.mac.authenticate(sequenceNumber: sequenceNumber, packet: plaintext, key: self.outboundMACKey)
         let ciphertext = try self.run(self.encryptor, plaintext)
         outboundBuffer.setBytes(ciphertext, at: start)
+        outboundBuffer.writeBytes(tag)
+    }
+
+    /// Encrypt-then-MAC: what gets aligned to the block size is everything
+    /// after the length field, since the length is not encrypted.
+    private func encryptEncryptThenMAC(_ packet: NIOSSHEncryptablePayload, to outboundBuffer: inout ByteBuffer, sequenceNumber: UInt32) throws {
+        let alignment = max(Spec.blockSize, 8)
+        let start = outboundBuffer.writerIndex
+        outboundBuffer.writeInteger(UInt32(0))
+        outboundBuffer.writeInteger(UInt8(0))
+        let payloadLength = outboundBuffer.writeEncryptablePayload(packet)
+
+        var paddingLength = alignment - ((1 + payloadLength) % alignment)
+        if paddingLength < 4 { paddingLength += alignment }
+        while 5 + payloadLength + paddingLength < 16 { paddingLength += alignment }
+        outboundBuffer.writeSSHPaddingBytes(count: paddingLength)
+
+        let encryptedLength = 1 + payloadLength + paddingLength
+        outboundBuffer.setInteger(UInt32(encryptedLength), at: start)
+        outboundBuffer.setInteger(UInt8(paddingLength), at: start + 4)
+
+        guard
+            let lengthBytes = outboundBuffer.getBytes(at: start, length: 4),
+            let plaintext = outboundBuffer.getBytes(at: start + 4, length: encryptedLength)
+        else {
+            throw ExtraSSHAlgorithmError.invalidPacket
+        }
+        let ciphertext = try self.run(self.encryptor, plaintext)
+        outboundBuffer.setBytes(ciphertext, at: start + 4)
+        let tag = self.mac.authenticate(sequenceNumber: sequenceNumber, packet: lengthBytes + ciphertext, key: self.outboundMACKey)
         outboundBuffer.writeBytes(tag)
     }
 }
